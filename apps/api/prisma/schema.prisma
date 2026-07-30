@@ -1,0 +1,507 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────
+
+enum UserRole {
+  SUPER_ADMIN
+  ORG_ADMIN
+  EVALUATOR
+  VIEWER
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  PENDING
+  SUSPENDED
+}
+
+enum OrganizationPlan {
+  FREE
+  STARTER
+  PRO
+  ENTERPRISE
+}
+
+enum DatasetStatus {
+  PENDING
+  PROCESSING
+  READY
+  FAILED
+  ARCHIVED
+}
+
+enum DatasetFormat {
+  CSV
+  JSON
+  JSONL
+}
+
+enum PromptType {
+  COMPLETION
+  CHAT
+  INSTRUCTION
+  CLASSIFICATION
+  SUMMARIZATION
+  TRANSLATION
+  CUSTOM
+}
+
+enum EvaluationTaskStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  COMPLETED
+  ARCHIVED
+}
+
+enum EvaluationType {
+  SINGLE
+  PAIRWISE
+  RANKING
+}
+
+enum EvaluationStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  SKIPPED
+  FLAGGED
+}
+
+enum ComparisonVerdict {
+  A_BETTER
+  B_BETTER
+  TIE
+  BOTH_BAD
+}
+
+enum ExportFormat {
+  JSONL
+  CSV
+  JSON
+}
+
+enum ExportStatus {
+  PENDING
+  PROCESSING
+  READY
+  FAILED
+}
+
+enum AIProvider {
+  OPENAI
+  ANTHROPIC
+  CUSTOM
+}
+
+// ─────────────────────────────────────────────
+// ORGANIZATIONS
+// ─────────────────────────────────────────────
+
+model Organization {
+  id        String           @id @default(cuid())
+  name      String
+  slug      String           @unique
+  plan      OrganizationPlan @default(FREE)
+  logoUrl   String?
+  settings  Json             @default("{}")
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  members     OrganizationMember[]
+  datasets    Dataset[]
+  tasks       EvaluationTask[]
+  exports     Export[]
+  invitations Invitation[]
+  apiKeys     ApiKey[]
+
+  @@map("organizations")
+}
+
+model OrganizationMember {
+  id             String       @id @default(cuid())
+  userId         String
+  organizationId String
+  role           UserRole     @default(EVALUATOR)
+  joinedAt       DateTime     @default(now())
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+  @@map("organization_members")
+}
+
+model Invitation {
+  id             String   @id @default(cuid())
+  email          String
+  organizationId String
+  role           UserRole @default(EVALUATOR)
+  token          String   @unique @default(cuid())
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  createdById    String
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User         @relation(fields: [createdById], references: [id])
+
+  @@map("invitations")
+}
+
+// ─────────────────────────────────────────────
+// USERS
+// ─────────────────────────────────────────────
+
+model User {
+  id           String     @id @default(cuid())
+  email        String     @unique
+  passwordHash String
+  name         String
+  role         UserRole   @default(EVALUATOR)
+  status       UserStatus @default(PENDING)
+  avatarUrl    String?
+  lastLoginAt  DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  memberships       OrganizationMember[]
+  refreshTokens     RefreshToken[]
+  createdDatasets   Dataset[]            @relation("DatasetCreator")
+  createdTasks      EvaluationTask[]     @relation("TaskCreator")
+  evaluations       Evaluation[]
+  comparisons       PairwiseComparison[]
+  rankings          RankingResult[]
+  invitationsSent   Invitation[]
+  exports           Export[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("refresh_tokens")
+}
+
+model ApiKey {
+  id             String    @id @default(cuid())
+  name           String
+  keyHash        String    @unique
+  keyPrefix      String
+  organizationId String
+  lastUsedAt     DateTime?
+  expiresAt      DateTime?
+  createdAt      DateTime  @default(now())
+  revokedAt      DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("api_keys")
+}
+
+// ─────────────────────────────────────────────
+// DATASETS
+// ─────────────────────────────────────────────
+
+model Dataset {
+  id             String        @id @default(cuid())
+  name           String
+  description    String?
+  organizationId String
+  createdById    String
+  status         DatasetStatus @default(PENDING)
+  format         DatasetFormat
+  version        Int           @default(1)
+  rowCount       Int           @default(0)
+  fileUrl        String?
+  metadata       Json          @default("{}")
+  tags           String[]      @default([])
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User             @relation("DatasetCreator", fields: [createdById], references: [id])
+  rows         DatasetRow[]
+  versions     DatasetVersion[]
+  tasks        EvaluationTask[]
+
+  @@index([organizationId])
+  @@index([status])
+  @@map("datasets")
+}
+
+model DatasetVersion {
+  id          String   @id @default(cuid())
+  datasetId   String
+  version     Int
+  rowCount    Int
+  fileUrl     String
+  changelog   String?
+  createdById String
+  createdAt   DateTime @default(now())
+
+  dataset Dataset @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+
+  @@unique([datasetId, version])
+  @@map("dataset_versions")
+}
+
+model DatasetRow {
+  id             String     @id @default(cuid())
+  datasetId      String
+  rowIndex       Int
+  prompt         String
+  promptType     PromptType @default(COMPLETION)
+  context        String?
+  expectedOutput String?
+  metadata       Json       @default("{}")
+  tags           String[]   @default([])
+  createdAt      DateTime   @default(now())
+
+  dataset         Dataset              @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+  modelResponses  ModelResponse[]
+  evaluations     Evaluation[]
+  comparisons     PairwiseComparison[]
+  rankings        RankingResult[]
+
+  @@unique([datasetId, rowIndex])
+  @@index([datasetId])
+  @@map("dataset_rows")
+}
+
+// ─────────────────────────────────────────────
+// MODEL RESPONSES
+// ─────────────────────────────────────────────
+
+model ModelResponse {
+  id               String    @id @default(cuid())
+  datasetRowId     String
+  modelId          String
+  modelName        String
+  provider         AIProvider
+  response         String
+  promptTokens     Int?
+  completionTokens Int?
+  latencyMs        Int?
+  metadata         Json      @default("{}")
+  createdAt        DateTime  @default(now())
+
+  datasetRow         DatasetRow           @relation(fields: [datasetRowId], references: [id], onDelete: Cascade)
+  comparisonsAsA     PairwiseComparison[] @relation("ResponseA")
+  comparisonsAsB     PairwiseComparison[] @relation("ResponseB")
+  rankingEntries     RankingEntry[]
+
+  @@index([datasetRowId])
+  @@index([modelId])
+  @@map("model_responses")
+}
+
+// ─────────────────────────────────────────────
+// EVALUATION TASKS
+// ─────────────────────────────────────────────
+
+model EvaluationTask {
+  id               String               @id @default(cuid())
+  organizationId   String
+  datasetId        String
+  name             String
+  description      String?
+  type             EvaluationType       @default(SINGLE)
+  status           EvaluationTaskStatus @default(DRAFT)
+  scoringCriteria  Json                 @default("[]")
+  dueDate          DateTime?
+  createdById      String
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  dataset      Dataset              @relation(fields: [datasetId], references: [id])
+  createdBy    User                 @relation("TaskCreator", fields: [createdById], references: [id])
+  assignments  TaskAssignment[]
+  evaluations  Evaluation[]
+  comparisons  PairwiseComparison[]
+  rankings     RankingResult[]
+  exports      Export[]
+
+  @@index([organizationId])
+  @@index([status])
+  @@map("evaluation_tasks")
+}
+
+model TaskAssignment {
+  id          String   @id @default(cuid())
+  taskId      String
+  evaluatorId String
+  assignedAt  DateTime @default(now())
+  completedAt DateTime?
+
+  task EvaluationTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, evaluatorId])
+  @@map("task_assignments")
+}
+
+// ─────────────────────────────────────────────
+// EVALUATIONS
+// ─────────────────────────────────────────────
+
+model Evaluation {
+  id                String           @id @default(cuid())
+  taskId            String
+  datasetRowId      String
+  evaluatorId       String
+  status            EvaluationStatus @default(PENDING)
+  scores            Json             @default("[]")
+  overallScore      Float?
+  comment           String?
+  tags              String[]         @default([])
+  timeSpentSeconds  Int?
+  aiSuggestions     Json?
+  submittedAt       DateTime?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  task       EvaluationTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  datasetRow DatasetRow     @relation(fields: [datasetRowId], references: [id], onDelete: Cascade)
+  evaluator  User           @relation(fields: [evaluatorId], references: [id])
+
+  @@unique([taskId, datasetRowId, evaluatorId])
+  @@index([taskId])
+  @@index([evaluatorId])
+  @@index([status])
+  @@map("evaluations")
+}
+
+// ─────────────────────────────────────────────
+// PAIRWISE COMPARISONS
+// ─────────────────────────────────────────────
+
+model PairwiseComparison {
+  id               String             @id @default(cuid())
+  taskId           String
+  datasetRowId     String
+  evaluatorId      String
+  responseAId      String
+  responseBId      String
+  verdict          ComparisonVerdict?
+  confidenceScore  Float?
+  reasoning        String?
+  dimensionVerdicts Json              @default("[]")
+  timeSpentSeconds Int?
+  status           String             @default("PENDING")
+  submittedAt      DateTime?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  task       EvaluationTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  datasetRow DatasetRow     @relation(fields: [datasetRowId], references: [id], onDelete: Cascade)
+  evaluator  User           @relation(fields: [evaluatorId], references: [id])
+  responseA  ModelResponse  @relation("ResponseA", fields: [responseAId], references: [id])
+  responseB  ModelResponse  @relation("ResponseB", fields: [responseBId], references: [id])
+
+  @@index([taskId])
+  @@index([evaluatorId])
+  @@map("pairwise_comparisons")
+}
+
+// ─────────────────────────────────────────────
+// RANKINGS
+// ─────────────────────────────────────────────
+
+model RankingResult {
+  id           String    @id @default(cuid())
+  taskId       String
+  datasetRowId String
+  evaluatorId  String
+  comment      String?
+  submittedAt  DateTime?
+  createdAt    DateTime  @default(now())
+
+  task       EvaluationTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  datasetRow DatasetRow     @relation(fields: [datasetRowId], references: [id], onDelete: Cascade)
+  evaluator  User           @relation(fields: [evaluatorId], references: [id])
+  entries    RankingEntry[]
+
+  @@map("ranking_results")
+}
+
+model RankingEntry {
+  id              String  @id @default(cuid())
+  rankingResultId String
+  responseId      String
+  rank            Int
+  score           Float?
+
+  rankingResult RankingResult @relation(fields: [rankingResultId], references: [id], onDelete: Cascade)
+  response      ModelResponse @relation(fields: [responseId], references: [id])
+
+  @@map("ranking_entries")
+}
+
+// ─────────────────────────────────────────────
+// EXPORTS
+// ─────────────────────────────────────────────
+
+model Export {
+  id             String       @id @default(cuid())
+  organizationId String
+  taskId         String?
+  requestedById  String
+  format         ExportFormat
+  status         ExportStatus @default(PENDING)
+  fileUrl        String?
+  filters        Json         @default("{}")
+  rowCount       Int?
+  errorMessage   String?
+  completedAt    DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  task         EvaluationTask? @relation(fields: [taskId], references: [id])
+  requestedBy  User            @relation(fields: [requestedById], references: [id])
+
+  @@index([organizationId])
+  @@index([status])
+  @@map("exports")
+}
+
+// ─────────────────────────────────────────────
+// AUDIT LOG
+// ─────────────────────────────────────────────
+
+model AuditLog {
+  id             String   @id @default(cuid())
+  organizationId String?
+  userId         String?
+  action         String
+  resourceType   String
+  resourceId     String?
+  metadata       Json     @default("{}")
+  ipAddress      String?
+  userAgent      String?
+  createdAt      DateTime @default(now())
+
+  @@index([organizationId])
+  @@index([userId])
+  @@index([resourceType, resourceId])
+  @@map("audit_logs")
+}
