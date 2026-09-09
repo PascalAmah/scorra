@@ -65,7 +65,7 @@ class LocalStorageDriver implements StorageDriver {
 
 /**
  * Supabase Storage driver — uploads files to a Supabase project bucket.
- * Requires SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY env vars.
+ * Requires SUPABASE_URL and SUPABASE_SECRET_KEY env vars.
  */
 class SupabaseStorageDriver implements StorageDriver {
   private readonly client: SupabaseClient;
