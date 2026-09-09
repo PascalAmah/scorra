@@ -25,10 +25,7 @@ export default function RankPage() {
   const [overIndex, setOverIndex] = useState<number | null>(null);
   const startedAt = useRef<number>(0);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    useAuthGuard();
-  }, [router]);
+  useAuthGuard();
 
   // Seed the per-item timer whenever the shown ranking set changes.
   const rowId = rank?.datasetRowId;

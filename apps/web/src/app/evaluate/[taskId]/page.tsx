@@ -82,10 +82,7 @@ export default function EvaluatePage() {
     return taskCriteria.length ? taskCriteria : DEFAULT_CRITERIA;
   }, [item]);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    useAuthGuard();
-  }, [router]);
+  useAuthGuard();
 
   // Seed the per-item timer whenever the shown item changes.
   const rowId = item?.datasetRow?.id;

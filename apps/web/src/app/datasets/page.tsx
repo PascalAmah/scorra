@@ -55,10 +55,7 @@ export default function DatasetsPage() {
   const datasets = useMemo(() => data?.data ?? [], [data]);
   const pagination = useMemo(() => data?.pagination ?? null, [data]);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    useAuthGuard();
-  }, [router]);
+  useAuthGuard();
 
   const visible = useMemo(
     () => (filter === 'ALL' ? datasets : datasets.filter((d) => d.status === filter)),

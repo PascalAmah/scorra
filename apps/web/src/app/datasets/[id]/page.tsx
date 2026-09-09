@@ -59,10 +59,7 @@ export default function DatasetDetailPage() {
 
   const cloneMutation = useCloneDataset(id);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    useAuthGuard();
-  }, [router]);
+  useAuthGuard();
 
   const filteredRows = useMemo(() => {
     const q = query.trim().toLowerCase();

@@ -102,10 +102,7 @@ export default function NewTaskPage() {
 
   const createMutation = useCreateTask();
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    useAuthGuard();
-  }, [router]);
+  useAuthGuard();
 
   const selectedDataset = useMemo(() => datasets.find((d) => d.id === datasetId), [datasets, datasetId]);
   const selectedUsers = useMemo(() => users.filter((m) => selectedEvaluators.includes(m.userId)), [users, selectedEvaluators]);

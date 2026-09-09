@@ -36,10 +36,7 @@ export default function DatasetVersionsPage() {
   const { data: versionsData } = useDatasetVersions(id);
   const versions = versionsData ?? [];
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    useAuthGuard();
-  }, [router]);
+  useAuthGuard();
 
   const currentVersion = dataset?.version ?? versions[0]?.version ?? null;
   const effectiveBase = baseVersion ?? versions[versions.length - 1]?.version ?? null;
