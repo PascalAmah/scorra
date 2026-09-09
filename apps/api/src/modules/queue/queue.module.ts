@@ -10,7 +10,7 @@ import { EmailNotificationsWorker } from './workers/email-notifications.worker';
 import { DatasetProcessorService } from '../datasets/dataset-processor.service';
 import { ExportGenerationService } from '../exports/export-generation.service';
 import { StorageService } from '../../common/services/storage.service';
-import { EmailService } from '../../common/services/email.service';
+import { EmailModule } from '../../common/services/email';
 import { AiModule } from '../ai/ai.module';
 import { AnalyticsModule } from '../analytics/analytics.module';
 
@@ -18,6 +18,7 @@ import { AnalyticsModule } from '../analytics/analytics.module';
   imports: [
     AiModule,
     AnalyticsModule,
+    EmailModule,
     BullModule.registerQueue(
       { name: QueueName.DATASET_PROCESSING },
       { name: QueueName.AI_EVALUATION },
@@ -37,8 +38,7 @@ import { AnalyticsModule } from '../analytics/analytics.module';
     DatasetProcessorService,
     StorageService,
     ExportGenerationService,
-    EmailService,
   ],
-  exports: [EmailService],
+  exports: [EmailModule],
 })
 export class QueueModule {}

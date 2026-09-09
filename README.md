@@ -217,11 +217,9 @@ This runs both the API and web apps:
 | `SUPABASE_STORAGE_BUCKET`         | Supabase storage bucket name                             | `uploads`                 |
 | `THROTTLE_TTL`                    | Rate-limit window in seconds                             | `60`                      |
 | `THROTTLE_LIMIT`                  | Max requests per window                                  | `100`                     |
-| `SMTP_HOST`                       | SMTP server host (leave blank to log invites only)       | —                         |
-| `SMTP_PORT`                       | SMTP server port                                         | `587`                     |
-| `SMTP_USER`                       | SMTP username                                            | —                         |
-| `SMTP_PASS`                       | SMTP password                                            | —                         |
-| `SMTP_FROM`                       | Sender address for invitation emails                     | `noreply@scorra.dev`      |
+| `SENDLIB_API_URL`                 | Sendlib REST endpoint                                    | `https://sendlib.samueltuoyo.com/api/send` |
+| `SENDLIB_API_KEY`                 | Sendlib API key (leave blank to log emails only)         | —                         |
+| `SENDLIB_FROM`                    | Sender with display name, e.g. `"Scorra" <noreply@scorra.dev>` | `Scorra <noreply@scorra.dev>` |
 
 > **Note on Redis**: the app uses a single `REDIS_URL` (e.g. `redis://:password@host:6379`). The old `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD` variables are no longer used.
 
