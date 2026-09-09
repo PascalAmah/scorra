@@ -2,7 +2,7 @@ services:
   - type: web
     name: scorra-api
     runtime: docker
-    dockerfilePath: ./apps/api/Dockerfile
+    dockerfilePath: ./Dockerfile
     dockerContext: .
     region: oregon    # change to frankfurt / singapore if closer to your users
     plan: starter     # free tier; upgrade to standard for always-on
