@@ -240,13 +240,13 @@ export default function MembersPage() {
             </div>
 
             {/* Members table */}
-            <div className="overflow-hidden rounded-2xl border border-ink-200 bg-white">
+            <div className="overflow-x-auto rounded-2xl border border-ink-200 bg-white">
               {membersLoading ? (
                 <p className="px-5 py-12 text-center font-mono text-[11px] text-ink-400">
                   Loading members…
                 </p>
               ) : (
-                <table className="w-full">
+                <table className="w-full min-w-[640px] text-left">
                   <thead>
                     <tr className="border-b border-ink-200 text-left font-mono text-[10.5px] uppercase tracking-[0.06em] text-ink-400">
                       <th className="py-3 pl-5 pr-4 font-medium">Member</th>

@@ -341,7 +341,7 @@ export function UploadWizard({ datasetId }: { datasetId?: string }) {
               <p className="mb-5 text-[12.5px] text-ink-500">
                 Match each column in your file to a field in the Scorra dataset schema.
               </p>
-              <table className="w-full border-collapse">
+              <table className="w-full border-collapse min-w-[420px]">
                 <thead>
                   <tr>
                     <th className="pb-2.5 text-left font-mono text-[10px] uppercase tracking-[0.06em] text-ink-500">
@@ -391,7 +391,7 @@ export function UploadWizard({ datasetId }: { datasetId?: string }) {
                 First 3 rows, using the mapping above.
               </p>
               <div className="overflow-x-auto">
-                <table className="w-full border-collapse">
+                <table className="w-full border-collapse min-w-[420px]">
                   <thead>
                     <tr>
                       {TARGET_ORDER.filter((t) => preview.some((p) => p[t])).map((t) => (

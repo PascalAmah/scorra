@@ -183,7 +183,7 @@ export default function AnalyticsPage() {
                       </p>
                     ) : (
                       <div className="overflow-x-auto">
-                        <table className="w-full border-collapse text-left text-[13px]">
+                        <table className="w-full border-collapse text-left text-[13px] min-w-[420px]">
                           <thead>
                             <tr className="border-b border-ink-200 font-mono text-[10.5px] uppercase tracking-[0.06em] text-ink-500">
                               <th className="py-2.5 pr-4">Pair</th>
@@ -298,7 +298,7 @@ export default function AnalyticsPage() {
                   </p>
                 ) : (
                   <div className="overflow-x-auto">
-                    <table className="w-full border-collapse text-[13px]">
+                    <table className="w-full border-collapse text-[13px] min-w-[560px]">
                       <thead>
                         <tr className="border-b border-ink-200 bg-paper text-left font-mono text-[10.5px] uppercase tracking-[0.06em] text-ink-500">
                           <th className="px-4 py-3.5">Evaluator</th>

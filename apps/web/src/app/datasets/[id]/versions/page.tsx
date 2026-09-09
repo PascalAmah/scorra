@@ -145,7 +145,7 @@ export default function DatasetVersionsPage() {
         </div>
 
         <div className="min-w-0">
-          <div className="mb-4 rounded-2xl border border-ink-200 bg-white p-5">
+          <div className="overflow-x-auto rounded-2xl border border-ink-200 bg-white p-5">
             <div className="mb-4 flex flex-wrap items-center gap-3">
               <select
                 value={effectiveBase ?? ''}

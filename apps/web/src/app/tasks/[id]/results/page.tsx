@@ -348,7 +348,7 @@ function PairwiseResults({
           </p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
+            <table className="w-full border-collapse min-w-[640px]">
               <thead>
                 <tr className="border-b border-ink-200 bg-paper font-mono text-[10.5px] uppercase tracking-[0.06em] text-ink-500">
                   {['Item', 'Prompt', 'Votes', 'Final verdict', 'AI Judge', 'Agreement', ''].map(
@@ -733,7 +733,7 @@ function RankingResults({
           </p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
+            <table className="w-full border-collapse min-w-[640px]">
               <thead>
                 <tr className="border-b border-ink-200 bg-paper font-mono text-[10.5px] uppercase tracking-[0.06em] text-ink-500">
                   {['Item', 'Prompt', 'Winner', 'Rankings', 'Agreement', ''].map((h, i) => (
@@ -959,7 +959,7 @@ function SingleResults({
           </p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
+            <table className="w-full border-collapse min-w-[640px]">
               <thead>
                 <tr className="border-b border-ink-200 bg-paper font-mono text-[10.5px] uppercase tracking-[0.06em] text-ink-500">
                   {['Item', 'Prompt', 'Evaluator', 'Score', 'Status', 'Submitted', ''].map(

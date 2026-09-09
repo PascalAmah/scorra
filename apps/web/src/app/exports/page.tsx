@@ -225,9 +225,9 @@ export default function ExportsPage() {
             </p>
           </div>
         ) : (
-          <div className="overflow-hidden rounded-2xl border border-ink-200 bg-white">
+          <div className="overflow-x-auto rounded-2xl border border-ink-200 bg-white">
             <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-[13.5px]">
+              <table className="w-full border-collapse text-[13.5px] min-w-[640px]">
                 <thead>
                   <tr className="border-b border-ink-200 bg-paper text-left font-mono text-[10.5px] uppercase tracking-[0.06em] text-ink-500">
                     <th className="px-5 py-3.5">Export</th>
