@@ -1,3 +1,7 @@
+# Docs (reference HTML + build notes — not committed)
+docs/
+scripts/
+
 # Dependencies
 node_modules/
 .pnp
@@ -11,6 +15,7 @@ dist/
 build/
 .next/
 out/
+*.tsbuildinfo
 
 # Environment files
 .env
@@ -39,7 +44,13 @@ Thumbs.db
 .turbo/
 
 # Prisma
-prisma/migrations/
+# migrations are intentionally committed — do NOT gitignore them
+
+# Local file uploads (runtime, not source)
+apps/api/uploads/
+
+# Local benchmark / scratch datasets
+apps/api/*.csv
 
 # Coverage
 coverage/
