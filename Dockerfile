@@ -5,6 +5,9 @@ WORKDIR /app
 # Install pnpm
 RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 
+# OpenSSL is required by the Prisma engine binaries (detection + runtime load)
+RUN apk add --no-cache openssl
+
 # Copy workspace manifests and lockfile only (cache layer)
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 COPY apps/api/package.json ./apps/api/package.json
@@ -18,6 +21,9 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
+
+# OpenSSL is required by the Prisma engine binaries (detection + runtime load)
+RUN apk add --no-cache openssl
 
 # Copy workspace manifests
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
@@ -47,6 +53,9 @@ WORKDIR /app
 ENV NODE_ENV=production
 
 RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
+
+# OpenSSL is required by the Prisma engine binaries (detection + runtime load)
+RUN apk add --no-cache openssl
 
 # Copy production node_modules from deps stage
 COPY --from=deps /app/node_modules ./node_modules
