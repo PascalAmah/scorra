@@ -31,6 +31,11 @@ RUN pnpm install --frozen-lockfile --filter @scorra/api --filter @scorra/types
 COPY packages/types ./packages/types
 COPY apps/api ./apps/api
 
+# Generate the Prisma client BEFORE building: `pnpm install` runs before the
+# schema is copied in, so without this the API would compile against the
+# schema-less stub client (everything typed as `any`).
+RUN cd apps/api && npx prisma generate
+
 # Build shared types first, then the API
 RUN pnpm --filter @scorra/types build
 RUN pnpm --filter @scorra/api build
