@@ -1,0 +1,91 @@
+services:
+  - type: web
+    name: scorra-api
+    runtime: docker
+    dockerfilePath: ./apps/api/Dockerfile
+    dockerContext: .
+    region: oregon    # change to frankfurt / singapore if closer to your users
+    plan: starter     # free tier; upgrade to standard for always-on
+
+    healthCheckPath: /api/v1/health
+
+    envVars:
+      # ── Application ──────────────────────────────────────────────────────
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3001
+
+      # ── Database ─────────────────────────────────────────────────────────
+      - key: DATABASE_URL
+        sync: false   # set manually in Render dashboard
+
+      # ── Redis (Upstash) ───────────────────────────────────────────────────
+      - key: REDIS_URL
+        sync: false   # set manually in Render dashboard
+
+      # ── JWT ───────────────────────────────────────────────────────────────
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 15m
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_EXPIRES_IN
+        value: 7d
+
+      # ── AI Providers ──────────────────────────────────────────────────────
+      - key: AI_PROVIDER
+        value: openai
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: EVALUATION_AI_MODEL
+        value: gpt-4o
+      - key: EVALUATION_AI_MODEL_ANTHROPIC
+        value: claude-3-5-sonnet-20241022
+      - key: EVALUATION_AI_MODEL_GROQ
+        value: openai/gpt-oss-120b
+      - key: EVALUATION_AI_MODEL_GEMINI
+        value: gemini-2.0-flash
+      - key: AI_MAX_TOKENS
+        value: 2048
+      - key: AI_TEMPERATURE
+        value: 0.2
+
+      # ── Storage (Supabase) ────────────────────────────────────────────────
+      - key: STORAGE_DRIVER
+        value: supabase
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false
+      - key: SUPABASE_STORAGE_BUCKET
+        value: uploads
+
+      # ── CORS ──────────────────────────────────────────────────────────────
+      - key: FRONTEND_URL
+        sync: false   # set to your Vercel URL, e.g. https://scorra.vercel.app
+
+      # ── Rate limiting ─────────────────────────────────────────────────────
+      - key: THROTTLE_TTL
+        value: 60
+      - key: THROTTLE_LIMIT
+        value: 100
+
+      # ── Email (SMTP) ──────────────────────────────────────────────────────
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: 587
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        value: noreply@scorra.dev
