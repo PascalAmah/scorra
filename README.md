@@ -51,7 +51,7 @@ An org admin creates datasets (prompt/response collections) and evaluation tasks
 
 ### Frontend (`apps/web`)
 
-- **Next.js 16** — React framework (App Router)
+- **Next.js 15** — React framework (App Router)
 - **React 19** — UI library
 - **TanStack Query** — server-state management
 - **Zustand** — client state (auth session)
@@ -189,29 +189,49 @@ This runs both the API and web apps:
 
 ### `apps/api/.env`
 
-| Variable                 | Description                 | Default                   |
-| ------------------------ | --------------------------- | ------------------------- |
-| `DATABASE_URL`           | Postgres connection string  | —                         |
-| `PORT`                   | API port                    | `3001`                    |
-| `API_PREFIX`             | API prefix                  | `api/v1`                  |
-| `FRONTEND_URL`           | Frontend URL (CORS)         | `http://localhost:3000`   |
-| `JWT_SECRET`             | Access token signing secret | `change-me-in-production` |
-| `JWT_EXPIRES_IN`         | Access token lifetime       | `15m`                     |
-| `JWT_REFRESH_SECRET`     | Refresh token secret        | —                         |
-| `JWT_REFRESH_EXPIRES_IN` | Refresh token lifetime      | `7d`                      |
-| `REDIS_HOST`             | Redis host                  | `localhost`               |
-| `REDIS_PORT`             | Redis port                  | `6379`                    |
-| `REDIS_PASSWORD`         | Redis password              | —                         |
-| `OPENAI_API_KEY`         | OpenAI API key              | —                         |
-| `ANTHROPIC_API_KEY`      | Anthropic API key           | —                         |
-| `AI_PROVIDER`            | Default AI provider         | `openai`                  |
-| `DEFAULT_AI_MODEL`       | Default model               | `gpt-4o`                  |
+| Variable                          | Description                                              | Default                   |
+| --------------------------------- | -------------------------------------------------------- | ------------------------- |
+| `DATABASE_URL`                    | Postgres connection string                               | —                         |
+| `PORT`                            | API port                                                 | `3001`                    |
+| `API_PREFIX`                      | API route prefix                                         | `api/v1`                  |
+| `FRONTEND_URL`                    | Frontend URL (CORS allowlist)                            | `http://localhost:3000`   |
+| `JWT_SECRET`                      | Access token signing secret                              | —                         |
+| `JWT_EXPIRES_IN`                  | Access token lifetime                                    | `15m`                     |
+| `JWT_REFRESH_SECRET`              | Refresh token signing secret                             | —                         |
+| `JWT_REFRESH_EXPIRES_IN`          | Refresh token lifetime                                   | `7d`                      |
+| `REDIS_URL`                       | Redis connection URL (full URL incl. auth)               | `redis://localhost:6379`  |
+| `AI_PROVIDER`                     | Default AI provider (`openai`, `anthropic`, `groq`, `gemini`) | `openai`             |
+| `OPENAI_API_KEY`                  | OpenAI API key                                           | —                         |
+| `ANTHROPIC_API_KEY`               | Anthropic API key                                        | —                         |
+| `GROQ_API_KEY`                    | Groq API key                                             | —                         |
+| `GEMINI_API_KEY`                  | Google Gemini API key                                    | —                         |
+| `EVALUATION_AI_MODEL`             | OpenAI model for evaluation                              | `gpt-4o`                  |
+| `EVALUATION_AI_MODEL_ANTHROPIC`   | Anthropic model for evaluation                           | `claude-3-5-sonnet-20241022` |
+| `EVALUATION_AI_MODEL_GROQ`        | Groq model for evaluation                                | `openai/gpt-oss-120b`     |
+| `EVALUATION_AI_MODEL_GEMINI`      | Gemini model for evaluation                              | `gemini-2.0-flash`        |
+| `AI_MAX_TOKENS`                   | Max tokens for AI responses                              | `2048`                    |
+| `AI_TEMPERATURE`                  | AI sampling temperature                                  | `0.2`                     |
+| `STORAGE_DRIVER`                  | File storage driver (`local` or `supabase`)              | `local`                   |
+| `SUPABASE_URL`                    | Supabase project URL                                     | —                         |
+| `SUPABASE_SECRET_KEY`             | Supabase `service_role` key (full access)                | —                         |
+| `SUPABASE_STORAGE_BUCKET`         | Supabase storage bucket name                             | `uploads`                 |
+| `THROTTLE_TTL`                    | Rate-limit window in seconds                             | `60`                      |
+| `THROTTLE_LIMIT`                  | Max requests per window                                  | `100`                     |
+| `SMTP_HOST`                       | SMTP server host (leave blank to log invites only)       | —                         |
+| `SMTP_PORT`                       | SMTP server port                                         | `587`                     |
+| `SMTP_USER`                       | SMTP username                                            | —                         |
+| `SMTP_PASS`                       | SMTP password                                            | —                         |
+| `SMTP_FROM`                       | Sender address for invitation emails                     | `noreply@scorra.dev`      |
 
-### `apps/web/.env`
+> **Note on Redis**: the app uses a single `REDIS_URL` (e.g. `redis://:password@host:6379`). The old `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD` variables are no longer used.
 
-| Variable              | Description  | Default                        |
-| --------------------- | ------------ | ------------------------------ |
-| `NEXT_PUBLIC_API_URL` | API base URL | `http://localhost:3001/api/v1` |
+> **Note on AI keys**: only the key for your chosen `AI_PROVIDER` is required. If no key is configured, all AI features fall back to deterministic heuristics (scores are returned with `confidence: 0`).
+
+### `apps/web/.env.local`
+
+| Variable              | Description                        | Default                          |
+| --------------------- | ---------------------------------- | -------------------------------- |
+| `NEXT_PUBLIC_API_URL` | API base URL (used by the browser) | `http://localhost:3001/api/v1`   |
 
 ---
 
@@ -411,20 +431,40 @@ Tests are written with Jest (backend) and located alongside source files (`*.spe
 
 ## Deployment
 
-The project is a Turborepo monorepo. To build for production:
+The project deploys the API on **Render** and the web on **Vercel**, with **Supabase** for Postgres and file storage and **Upstash** for Redis.
+
+### API → Render
+
+A `render.yaml` blueprint is included at the repo root. Render will detect it automatically when you connect the repository.
+
+1. Go to Render → **New** → **Blueprint** → connect `PascalAmah/scorra`, branch `main`
+2. Render creates the `scorra-api` service (Docker runtime, `apps/api/Dockerfile`)
+3. Fill in the secret env vars marked `sync: false` in `render.yaml`:
+   - `DATABASE_URL` — Supabase → Project Settings → Database → connection string
+   - `REDIS_URL` — Upstash → your Redis instance → connection URL
+   - `FRONTEND_URL` — your Vercel URL (set after web deploy)
+   - `SUPABASE_URL` and `SUPABASE_SECRET_KEY` — Supabase → Project Settings → API
+   - Any AI provider keys you want active
+4. Deploy. The container runs `prisma migrate deploy` then starts the API.
+5. Health check: `https://<your-render-url>/api/v1/health`
+
+### Web → Vercel
+
+1. Go to Vercel → **Add New Project** → import the repo
+2. Set **Root Directory** to `apps/web` — `vercel.json` handles the monorepo build commands
+3. Add one environment variable: `NEXT_PUBLIC_API_URL = https://<your-render-url>/api/v1`
+4. Deploy
+5. Copy the Vercel URL back into Render's `FRONTEND_URL` env var and redeploy the API (so CORS picks it up)
+
+### Local build
 
 ```sh
 pnpm build
 ```
 
-- `apps/api` builds to `dist/` (NestJS)
-- `apps/web` builds to `.next/` (Next.js)
-- `packages/types` builds to `dist/`
-
-Set production environment variables before starting:
-
-- `apps/api`: `pnpm --filter @scorra/api start`
-- `apps/web`: `pnpm --filter web start`
+- `apps/api` → `dist/` (NestJS)
+- `apps/web` → `.next/` (Next.js)
+- `packages/types` → `dist/`
 
 ---
 
