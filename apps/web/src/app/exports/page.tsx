@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 import { AppShell } from '@/components/dashboard/shell';
 import { Topbar } from '@/components/dashboard/topbar';
