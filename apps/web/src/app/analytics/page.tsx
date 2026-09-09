@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useAuthGuard } from '@/hooks/use-auth-guard';
 import { ChartEvaluationIcon } from 'hugeicons-react';
 import type {
   AgreementMetrics,
@@ -40,17 +41,14 @@ export default function AnalyticsPage() {
   const [scores, setScores] = useState<TaskScoreAnalytics | null>(null);
   const [taskLoading, setTaskLoading] = useState(false);
 
+  useAuthGuard();
+
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (!api.isAuthenticated) {
-      router.replace('/login');
-      return;
-    }
     api
       .getEvaluatorMetrics()
       .catch(() => [] as EvaluatorMetrics[])
       .then(setEvaluators);
-  }, [router]);
+  }, []);
 
   const handleTaskChange = (taskId: string) => {
     setSelectedTask(taskId);

@@ -1,7 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useMemo, useState } from 'react';
 
 import { AppShell } from '@/components/dashboard/shell';
 import { Topbar } from '@/components/dashboard/topbar';
@@ -9,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { SearchFilterBar } from '@/components/ui/search-filter-bar';
 import { useTasks } from '@/hooks/use-tasks';
 import { useExports, useRequestExport } from '@/hooks/use-exports';
+import { useAuthGuard } from '@/hooks/use-auth-guard';
 import { api } from '@/lib/api';
 import { cn, formatBytes, formatNumber, formatRelativeTime } from '@/lib/utils';
 
@@ -43,12 +43,7 @@ export default function ExportsPage() {
   const requestExport = useRequestExport();
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (!api.isAuthenticated) {
-      router.replace('/login');
-    }
-  }, [router]);
+  useAuthGuard();
 
   const readyCount = useMemo(() => list.filter((e) => e.status === 'READY').length, [list]);
 

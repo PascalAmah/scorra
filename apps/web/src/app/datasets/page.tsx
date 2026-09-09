@@ -27,7 +27,7 @@ import {
   useDatasets,
   useDeleteDataset,
 } from '@/hooks/use-datasets';
-import { api } from '@/lib/api';
+import { useAuthGuard } from '@/hooks/use-auth-guard';
 import { cn, formatNumber, formatRelativeTime } from '@/lib/utils';
 
 const FILTERS = ['ALL', 'READY', 'PROCESSING', 'FAILED'] as const;
@@ -57,9 +57,7 @@ export default function DatasetsPage() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    if (!api.isAuthenticated) {
-      router.replace('/login');
-    }
+    useAuthGuard();
   }, [router]);
 
   const visible = useMemo(

@@ -1,7 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState } from 'react';
 
 import { SettingsShell } from '@/components/dashboard/settings-shell';
 import { Button } from '@/components/ui/button';
@@ -9,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import type { User } from '@scorra/types';
 import { useOrganizations } from '@/hooks/use-organization';
 import { useChangePassword, useProfile, useUpdateProfile } from '@/hooks/use-profile';
-import { api } from '@/lib/api';
+import { useAuthGuard } from '@/hooks/use-auth-guard';
 
 function initials(name: string | null | undefined): string {
   if (!name) return '?';
@@ -46,12 +45,7 @@ export default function SettingsAccountPage() {
 
   /* const [notifs, setNotifs] = useState(NOTIFICATION_DEFAULTS); */
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (!api.isAuthenticated) {
-      router.replace('/login');
-    }
-  }, [router]);
+  useAuthGuard();
 
   const handleChangePassword = async () => {
     setPwMsg('');

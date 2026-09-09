@@ -5,7 +5,7 @@ import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { ScoreDimension, ScoringCriteria } from '@scorra/types';
 import type { ScoreState } from '@scorra/types';
-import { api } from '@/lib/api';
+import { useAuthGuard } from '@/hooks/use-auth-guard';
 import { cn } from '@/lib/utils';
 import { TYPE_LABELS } from '@/lib/task-utils';
 import { Markdown } from '@/components/ui/markdown';
@@ -84,9 +84,7 @@ export default function EvaluatePage() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    if (!api.isAuthenticated) {
-      router.replace('/login');
-    }
+    useAuthGuard();
   }, [router]);
 
   // Seed the per-item timer whenever the shown item changes.

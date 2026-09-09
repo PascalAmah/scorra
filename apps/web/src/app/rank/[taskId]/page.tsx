@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
-import { api } from '@/lib/api';
+import { useAuthGuard } from '@/hooks/use-auth-guard';
 import type { RankedResponse } from '@scorra/types';
 import { cn } from '@/lib/utils';
 import { Markdown } from '@/components/ui/markdown';
@@ -27,9 +27,7 @@ export default function RankPage() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    if (!api.isAuthenticated) {
-      router.replace('/login');
-    }
+    useAuthGuard();
   }, [router]);
 
   // Seed the per-item timer whenever the shown ranking set changes.

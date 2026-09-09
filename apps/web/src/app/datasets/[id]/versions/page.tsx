@@ -13,7 +13,7 @@ import {
   useDatasetVersionDiff,
   useDatasetVersions,
 } from '@/hooks/use-datasets';
-import { api } from '@/lib/api';
+import { useAuthGuard } from '@/hooks/use-auth-guard';
 import type { Dataset } from '@scorra/types';
 import { cn, formatDate, formatNumber } from '@/lib/utils';
 
@@ -38,9 +38,7 @@ export default function DatasetVersionsPage() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    if (!api.isAuthenticated) {
-      router.replace('/login');
-    }
+    useAuthGuard();
   }, [router]);
 
   const currentVersion = dataset?.version ?? versions[0]?.version ?? null;

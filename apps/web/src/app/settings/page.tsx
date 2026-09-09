@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 import { SettingsShell } from '@/components/dashboard/settings-shell';
@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import type { Organization } from '@scorra/types';
 import { useOrganizations, useUpdateOrganization, useMembers } from '@/hooks/use-organization';
 import { useAuthStore } from '@/store/auth-store';
-import { api } from '@/lib/api';
+import { useAuthGuard } from '@/hooks/use-auth-guard';
 import { formatNumber } from '@/lib/utils';
 import { isOrgAdmin } from '@/lib/permissions';
 
@@ -61,12 +61,7 @@ export default function SettingsOrgPage() {
 
   const [saved, setSaved] = useState(false);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (!api.isAuthenticated) {
-      router.replace('/login');
-    }
-  }, [router]);
+  useAuthGuard();
 
   const sub = org ? org.name.toUpperCase() : '…';
 

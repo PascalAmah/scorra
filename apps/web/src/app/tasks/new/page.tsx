@@ -12,6 +12,7 @@ import { Stepper } from '@/components/ui/stepper';
 import { useDatasets } from '@/hooks/use-datasets';
 import { useCreateTask } from '@/hooks/use-tasks';
 import { useUsers } from '@/hooks/use-users';
+import { useAuthGuard } from '@/hooks/use-auth-guard';
 import { api } from '@/lib/api';
 import { formatNumber } from '@/lib/utils';
 import { cn } from '@/lib/utils';
@@ -103,9 +104,7 @@ export default function NewTaskPage() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    if (!api.isAuthenticated) {
-      router.replace('/login');
-    }
+    useAuthGuard();
   }, [router]);
 
   const selectedDataset = useMemo(() => datasets.find((d) => d.id === datasetId), [datasets, datasetId]);

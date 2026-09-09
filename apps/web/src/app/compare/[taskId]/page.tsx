@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { ComparisonVerdict } from '@scorra/types';
-import { api } from '@/lib/api';
+import { useAuthGuard } from '@/hooks/use-auth-guard';
 import { cn } from '@/lib/utils';
 import { Markdown } from '@/components/ui/markdown';
 import { useNextComparison, useSubmitComparison } from '@/hooks/use-evaluation';
@@ -31,12 +31,7 @@ export default function ComparePage() {
   const [reasoning, setReasoning] = useState('');
   const startedAt = useRef<number>(0);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (!api.isAuthenticated) {
-      router.replace('/login');
-    }
-  }, [router]);
+  useAuthGuard();
 
   // Seed the per-item timer whenever the shown pair changes.
   const rowId = pair?.datasetRowId;

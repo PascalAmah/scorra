@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useAuthGuard } from '@/hooks/use-auth-guard';
 import Link from 'next/link';
 import { motion } from 'motion/react';
 import {
@@ -118,18 +119,14 @@ export default function DashboardPage() {
   const isAdmin = isOrgAdmin(user);
 
   const { data: orgs } = useOrganizations();
-  const hasOrg = (orgs ?? []).length > 0;
+  const hasOrg = Boolean(user) && (orgs ?? []).length > 0;
 
   useEffect(() => {
     const id = requestAnimationFrame(() => setMounted(true));
     return () => cancelAnimationFrame(id);
   }, []);
 
-  useEffect(() => {
-    if (mounted && !accessToken) {
-      router.replace('/login');
-    }
-  }, [mounted, accessToken, router]);
+  useAuthGuard();
 
   const taskRows = useMemo<TaskRow[]>(
     () =>

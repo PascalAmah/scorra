@@ -98,7 +98,7 @@ export function Sidebar({ className, onNavigate, onClose, ...props }: SidebarPro
 
   const { data: orgsData } = useOrganizations();
   const orgs = orgsData ?? [];
-  const currentOrg = orgs.find((o) => o.id === user?.organizationId) ?? orgs[0];
+  const currentOrg = user ? orgs.find((o) => o.id === user.organizationId) ?? orgs[0] : null;
 
   const isAdmin = isOrgAdmin(user);
   const navGroups = isAdmin ? ADMIN_NAV : EVALUATOR_NAV;
@@ -150,7 +150,7 @@ export function Sidebar({ className, onNavigate, onClose, ...props }: SidebarPro
             </span>
             <span className="min-w-0">
               <span className="block truncate text-[12.5px] font-semibold leading-tight">
-                {currentOrg?.name ?? 'No org'}
+                {currentOrg ? currentOrg.name : user ? 'No org' : 'Not signed in'}
               </span>
               <span className="block font-mono text-[10.5px] text-ink-400">
                 {user ? (ROLE_LABELS[effectiveRole(user) ?? ''] ?? 'Member') : 'Not signed in'}
