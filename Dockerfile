@@ -1,5 +1,5 @@
 # ─── Stage 1: deps ────────────────────────────────────────────────────────────
-FROM node:20-alpine AS deps
+FROM node:22-alpine AS deps
 WORKDIR /app
 
 # Install pnpm
@@ -17,7 +17,7 @@ COPY packages/types/package.json ./packages/types/package.json
 RUN pnpm install --frozen-lockfile --prod --filter @scorra/api --filter @scorra/types
 
 # ─── Stage 2: build ───────────────────────────────────────────────────────────
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 WORKDIR /app
 
 RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
@@ -47,7 +47,7 @@ RUN pnpm --filter @scorra/types build
 RUN pnpm --filter @scorra/api build
 
 # ─── Stage 3: runner ──────────────────────────────────────────────────────────
-FROM node:20-alpine AS runner
+FROM node:22-alpine AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
