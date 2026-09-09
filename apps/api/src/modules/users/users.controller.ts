@@ -27,7 +27,6 @@ export class UsersController {
   }
 
   @Get()
-  @Roles(UserRole.ORG_ADMIN, UserRole.SUPER_ADMIN)
   @ApiOperation({ summary: 'List users in current organization' })
   listUsers(@CurrentUser() user: AuthTokenPayload, @CurrentOrgId() orgId: string) {
     return this.usersService.listOrgUsers(orgId, user.sub);

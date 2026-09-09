@@ -6,11 +6,16 @@ import { DatasetsController } from './datasets.controller';
 import { DatasetsService } from './datasets.service';
 import { DatasetProcessorService } from './dataset-processor.service';
 import { StorageService } from '../../common/services/storage.service';
+import { AiModule } from '../ai/ai.module';
 import { QueueName } from '@scorra/types';
 
 @Module({
   imports: [
-    BullModule.registerQueue({ name: QueueName.DATASET_PROCESSING }),
+    BullModule.registerQueue(
+      { name: QueueName.DATASET_PROCESSING },
+      { name: QueueName.MODEL_INFERENCE },
+    ),
+    AiModule,
     MulterModule.register({
       storage: memoryStorage(),
       limits: { fileSize: 50 * 1024 * 1024 }, // 50MB

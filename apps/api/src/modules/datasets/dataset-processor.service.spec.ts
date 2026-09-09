@@ -6,8 +6,10 @@ import { StorageService } from '../../common/services/storage.service';
 describe('DatasetProcessorService', () => {
   let service: DatasetProcessorService;
   let prisma: {
-    dataset: { update: jest.Mock };
+    dataset: { update: jest.Mock; findUnique: jest.Mock };
     datasetRow: { createMany: jest.Mock };
+    datasetVersion: { count: jest.Mock; create: jest.Mock };
+    modelResponse: { createMany: jest.Mock };
   };
   let storage: { download: jest.Mock };
 
@@ -16,8 +18,16 @@ describe('DatasetProcessorService', () => {
 
   beforeEach(async () => {
     prisma = {
-      dataset: { update: jest.fn() },
+      dataset: {
+        update: jest.fn(),
+        findUnique: jest.fn().mockResolvedValue({ id: datasetId, version: 1 }),
+      },
       datasetRow: { createMany: jest.fn() },
+      datasetVersion: {
+        count: jest.fn().mockResolvedValue(0),
+        create: jest.fn(),
+      },
+      modelResponse: { createMany: jest.fn() },
     };
     storage = { download: jest.fn() };
 

@@ -1,5 +1,20 @@
-import { IsString, IsArray, IsOptional, IsNumber, Min } from 'class-validator';
+import { IsString, IsArray, IsOptional, IsNumber, Min, IsInt } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+
+export class RankingEntryDto {
+  @ApiProperty()
+  @IsString()
+  responseId: string;
+
+  @ApiProperty()
+  @IsInt()
+  rank: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  score?: number;
+}
 
 export class SubmitRankingDto {
   @ApiProperty()
@@ -10,9 +25,9 @@ export class SubmitRankingDto {
   @IsString()
   datasetRowId: string;
 
-  @ApiProperty({ type: [{ responseId: 'string', rank: 0, score: 0 }] })
+  @ApiProperty({ type: () => [RankingEntryDto] })
   @IsArray()
-  entries: { responseId: string; rank: number; score?: number }[];
+  entries: RankingEntryDto[];
 
   @ApiPropertyOptional()
   @IsOptional()

@@ -1,7 +1,9 @@
 import { Injectable, NotFoundException, ForbiddenException, Logger } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SubmitComparisonDto } from './dto/submit-comparison.dto';
 import { SubmitRankingDto } from './dto/submit-ranking.dto';
+import { assertEvaluatorAssigned } from '../../common/utils/task-access';
 
 @Injectable()
 export class ComparisonsService {
@@ -9,14 +11,31 @@ export class ComparisonsService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  async getNextPair(taskId: string, userId: string) {
-    // Verify task exists and user is assigned
-    const task = await this.prisma.evaluationTask.findUnique({
-      where: { id: taskId },
-      include: { assignments: { where: { evaluatorId: userId } } },
+  async getNextPair(
+    taskId: string,
+    userId: string,
+    organizationId: string,
+  ): Promise<
+    | { done: true; message: string }
+    | {
+        done: false;
+        datasetRowId: string;
+        prompt: string;
+        context: string | null;
+        responseA: { id: string; modelName: string; response: string };
+        responseB: { id: string; modelName: string; response: string };
+      }
+  > {
+    // Verify task exists, belongs to the org, is active, and user is assigned
+    const task = await this.prisma.evaluationTask.findFirst({
+      where: { id: taskId, organizationId },
+      include: { assignments: { select: { evaluatorId: true } } },
     });
     if (!task) throw new NotFoundException('Task not found');
-    if (task.type !== 'PAIRWISE') throw new ForbiddenException('This endpoint is for pairwise comparison tasks');
+    if (task.status !== 'ACTIVE') throw new ForbiddenException('Task is not active');
+    if (task.type !== 'PAIRWISE')
+      throw new ForbiddenException('This endpoint is for pairwise comparison tasks');
+    assertEvaluatorAssigned(task, userId);
 
     // Find a dataset row that hasn't been compared by this user
     const existingComparisons = await this.prisma.pairwiseComparison.findMany({
@@ -44,15 +63,26 @@ export class ComparisonsService {
     };
   }
 
-  async submit(dto: SubmitComparisonDto, userId: string) {
-    // Verify task and assignment
-    const task = await this.prisma.evaluationTask.findUnique({ where: { id: dto.taskId } });
+  async submit(dto: SubmitComparisonDto, userId: string, organizationId: string) {
+    // Verify task, org, active status, and assignment
+    const task = await this.prisma.evaluationTask.findFirst({
+      where: { id: dto.taskId, organizationId },
+      include: { assignments: { select: { evaluatorId: true } } },
+    });
     if (!task) throw new NotFoundException('Task not found');
+    if (task.status !== 'ACTIVE') throw new ForbiddenException('Task is not active');
+    assertEvaluatorAssigned(task, userId);
 
     const existing = await this.prisma.pairwiseComparison.findFirst({
       where: { taskId: dto.taskId, datasetRowId: dto.datasetRowId, evaluatorId: userId },
     });
     if (existing) throw new ForbiddenException('Already submitted a comparison for this item');
+
+    const dimensionVerdicts: Prisma.InputJsonValue = (dto.dimensionVerdicts ?? []).map((v) => ({
+      dimension: v.dimension,
+      verdict: v.verdict,
+      ...(v.note !== undefined && v.note !== null ? { note: v.note } : {}),
+    }));
 
     return this.prisma.pairwiseComparison.create({
       data: {
@@ -64,7 +94,7 @@ export class ComparisonsService {
         verdict: dto.verdict,
         confidenceScore: dto.confidenceScore ?? null,
         reasoning: dto.reasoning ?? null,
-        dimensionVerdicts: (dto.dimensionVerdicts ?? []) as any,
+        dimensionVerdicts,
         timeSpentSeconds: dto.timeSpentSeconds ?? null,
         status: 'COMPLETED',
         submittedAt: new Date(),
@@ -72,7 +102,7 @@ export class ComparisonsService {
     });
   }
 
-  async getResults(taskId: string, userId: string) {
+  async getResults(taskId: string, _userId: string) {
     const task = await this.prisma.evaluationTask.findUnique({ where: { id: taskId } });
     if (!task) throw new NotFoundException('Task not found');
 
@@ -93,9 +123,16 @@ export class ComparisonsService {
       if (!modelWins[aName]) modelWins[aName] = { wins: 0, losses: 0, ties: 0 };
       if (!modelWins[bName]) modelWins[bName] = { wins: 0, losses: 0, ties: 0 };
 
-      if (c.verdict === 'A_BETTER') { modelWins[aName].wins++; modelWins[bName].losses++; }
-      else if (c.verdict === 'B_BETTER') { modelWins[bName].wins++; modelWins[aName].losses++; }
-      else { modelWins[aName].ties++; modelWins[bName].ties++; }
+      if (c.verdict === 'A_BETTER') {
+        modelWins[aName].wins++;
+        modelWins[bName].losses++;
+      } else if (c.verdict === 'B_BETTER') {
+        modelWins[bName].wins++;
+        modelWins[aName].losses++;
+      } else {
+        modelWins[aName].ties++;
+        modelWins[bName].ties++;
+      }
     }
 
     return {
@@ -103,20 +140,67 @@ export class ComparisonsService {
       modelResults: Object.entries(modelWins).map(([model, stats]) => ({
         model,
         ...stats,
-        winRate: stats.wins + stats.losses > 0
-          ? (stats.wins / (stats.wins + stats.losses)).toFixed(3)
-          : '0.000',
+        winRate:
+          stats.wins + stats.losses > 0
+            ? (stats.wins / (stats.wins + stats.losses)).toFixed(3)
+            : '0.000',
       })),
     };
   }
 
-  async getNextRanking(taskId: string, userId: string) {
-    const task = await this.prisma.evaluationTask.findUnique({
-      where: { id: taskId },
-      include: { assignments: { where: { evaluatorId: userId } } },
+  async getItems(taskId: string, _userId: string) {
+    const task = await this.prisma.evaluationTask.findUnique({ where: { id: taskId } });
+    if (!task) throw new NotFoundException('Task not found');
+    return this.prisma.pairwiseComparison.findMany({
+      where: { taskId },
+      orderBy: { updatedAt: 'desc' },
+      include: {
+        evaluator: { select: { name: true, email: true } },
+        datasetRow: { select: { rowIndex: true, prompt: true } },
+      },
+    });
+  }
+
+  async getRankingResults(taskId: string, _userId: string) {
+    const task = await this.prisma.evaluationTask.findUnique({ where: { id: taskId } });
+    if (!task) throw new NotFoundException('Task not found');
+
+    const results = await this.prisma.rankingResult.findMany({
+      where: { taskId },
+      orderBy: { submittedAt: 'desc' },
+      include: {
+        evaluator: { select: { id: true, name: true, email: true } },
+        datasetRow: { select: { id: true, rowIndex: true, prompt: true } },
+        entries: {
+          orderBy: { rank: 'asc' },
+          include: { response: { select: { id: true, modelName: true } } },
+        },
+      },
+    });
+
+    // Flatten the model name onto each entry so the client doesn't need to
+    // know about the nested response relation.
+    return results.map((ranking) => ({
+      ...ranking,
+      entries: ranking.entries.map((entry) => ({
+        id: entry.id,
+        responseId: entry.responseId,
+        modelName: entry.response.modelName,
+        rank: entry.rank,
+        score: entry.score,
+      })),
+    }));
+  }
+
+  async getNextRanking(taskId: string, userId: string, organizationId: string) {
+    const task = await this.prisma.evaluationTask.findFirst({
+      where: { id: taskId, organizationId },
+      include: { assignments: { select: { evaluatorId: true } } },
     });
     if (!task) throw new NotFoundException('Task not found');
+    if (task.status !== 'ACTIVE') throw new ForbiddenException('Task is not active');
     if (task.type !== 'RANKING') throw new ForbiddenException('This endpoint is for ranking tasks');
+    assertEvaluatorAssigned(task, userId);
 
     const existingRankings = await this.prisma.rankingResult.findMany({
       where: { taskId, evaluatorId: userId },
@@ -149,9 +233,14 @@ export class ComparisonsService {
     };
   }
 
-  async submitRanking(dto: SubmitRankingDto, userId: string) {
-    const task = await this.prisma.evaluationTask.findUnique({ where: { id: dto.taskId } });
+  async submitRanking(dto: SubmitRankingDto, userId: string, organizationId: string) {
+    const task = await this.prisma.evaluationTask.findFirst({
+      where: { id: dto.taskId, organizationId },
+      include: { assignments: { select: { evaluatorId: true } } },
+    });
     if (!task) throw new NotFoundException('Task not found');
+    if (task.status !== 'ACTIVE') throw new ForbiddenException('Task is not active');
+    assertEvaluatorAssigned(task, userId);
 
     const existing = await this.prisma.rankingResult.findFirst({
       where: { taskId: dto.taskId, datasetRowId: dto.datasetRowId, evaluatorId: userId },

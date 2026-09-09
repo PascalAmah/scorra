@@ -85,6 +85,13 @@ enum ComparisonVerdict {
   BOTH_BAD
 }
 
+enum PairwiseComparisonStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  SKIPPED
+}
+
 enum ExportFormat {
   JSONL
   CSV
@@ -101,6 +108,8 @@ enum ExportStatus {
 enum AIProvider {
   OPENAI
   ANTHROPIC
+  GROQ
+  GEMINI
   CUSTOM
 }
 
@@ -129,11 +138,11 @@ model Organization {
 }
 
 model OrganizationMember {
-  id             String       @id @default(cuid())
+  id             String   @id @default(cuid())
   userId         String
   organizationId String
-  role           UserRole     @default(EVALUATOR)
-  joinedAt       DateTime     @default(now())
+  role           UserRole @default(EVALUATOR)
+  joinedAt       DateTime @default(now())
 
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -143,15 +152,15 @@ model OrganizationMember {
 }
 
 model Invitation {
-  id             String   @id @default(cuid())
+  id             String    @id @default(cuid())
   email          String
   organizationId String
-  role           UserRole @default(EVALUATOR)
-  token          String   @unique @default(cuid())
+  role           UserRole  @default(EVALUATOR)
+  token          String    @unique @default(cuid())
   expiresAt      DateTime
   acceptedAt     DateTime?
   createdById    String
-  createdAt      DateTime @default(now())
+  createdAt      DateTime  @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   createdBy    User         @relation(fields: [createdById], references: [id])
@@ -175,26 +184,26 @@ model User {
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
-  memberships       OrganizationMember[]
-  refreshTokens     RefreshToken[]
-  createdDatasets   Dataset[]            @relation("DatasetCreator")
-  createdTasks      EvaluationTask[]     @relation("TaskCreator")
-  evaluations       Evaluation[]
-  comparisons       PairwiseComparison[]
-  rankings          RankingResult[]
-  invitationsSent   Invitation[]
-  exports           Export[]
+  memberships     OrganizationMember[]
+  refreshTokens   RefreshToken[]
+  createdDatasets Dataset[]            @relation("DatasetCreator")
+  createdTasks    EvaluationTask[]     @relation("TaskCreator")
+  evaluations     Evaluation[]
+  comparisons     PairwiseComparison[]
+  rankings        RankingResult[]
+  invitationsSent Invitation[]
+  exports         Export[]
 
   @@map("users")
 }
 
 model RefreshToken {
-  id        String   @id @default(cuid())
-  token     String   @unique
+  id        String    @id @default(cuid())
+  token     String    @unique
   userId    String
   expiresAt DateTime
   revokedAt DateTime?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -276,11 +285,11 @@ model DatasetRow {
   tags           String[]   @default([])
   createdAt      DateTime   @default(now())
 
-  dataset         Dataset              @relation(fields: [datasetId], references: [id], onDelete: Cascade)
-  modelResponses  ModelResponse[]
-  evaluations     Evaluation[]
-  comparisons     PairwiseComparison[]
-  rankings        RankingResult[]
+  dataset        Dataset              @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+  modelResponses ModelResponse[]
+  evaluations    Evaluation[]
+  comparisons    PairwiseComparison[]
+  rankings       RankingResult[]
 
   @@unique([datasetId, rowIndex])
   @@index([datasetId])
@@ -292,7 +301,7 @@ model DatasetRow {
 // ─────────────────────────────────────────────
 
 model ModelResponse {
-  id               String    @id @default(cuid())
+  id               String     @id @default(cuid())
   datasetRowId     String
   modelId          String
   modelName        String
@@ -301,13 +310,13 @@ model ModelResponse {
   promptTokens     Int?
   completionTokens Int?
   latencyMs        Int?
-  metadata         Json      @default("{}")
-  createdAt        DateTime  @default(now())
+  metadata         Json       @default("{}")
+  createdAt        DateTime   @default(now())
 
-  datasetRow         DatasetRow           @relation(fields: [datasetRowId], references: [id], onDelete: Cascade)
-  comparisonsAsA     PairwiseComparison[] @relation("ResponseA")
-  comparisonsAsB     PairwiseComparison[] @relation("ResponseB")
-  rankingEntries     RankingEntry[]
+  datasetRow     DatasetRow           @relation(fields: [datasetRowId], references: [id], onDelete: Cascade)
+  comparisonsAsA PairwiseComparison[] @relation("ResponseA")
+  comparisonsAsB PairwiseComparison[] @relation("ResponseB")
+  rankingEntries RankingEntry[]
 
   @@index([datasetRowId])
   @@index([modelId])
@@ -319,18 +328,18 @@ model ModelResponse {
 // ─────────────────────────────────────────────
 
 model EvaluationTask {
-  id               String               @id @default(cuid())
-  organizationId   String
-  datasetId        String
-  name             String
-  description      String?
-  type             EvaluationType       @default(SINGLE)
-  status           EvaluationTaskStatus @default(DRAFT)
-  scoringCriteria  Json                 @default("[]")
-  dueDate          DateTime?
-  createdById      String
-  createdAt        DateTime             @default(now())
-  updatedAt        DateTime             @updatedAt
+  id              String               @id @default(cuid())
+  organizationId  String
+  datasetId       String
+  name            String
+  description     String?
+  type            EvaluationType       @default(SINGLE)
+  status          EvaluationTaskStatus @default(DRAFT)
+  scoringCriteria Json                 @default("[]")
+  dueDate         DateTime?
+  createdById     String
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
 
   organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   dataset      Dataset              @relation(fields: [datasetId], references: [id])
@@ -347,10 +356,10 @@ model EvaluationTask {
 }
 
 model TaskAssignment {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   taskId      String
   evaluatorId String
-  assignedAt  DateTime @default(now())
+  assignedAt  DateTime  @default(now())
   completedAt DateTime?
 
   task EvaluationTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
@@ -364,20 +373,20 @@ model TaskAssignment {
 // ─────────────────────────────────────────────
 
 model Evaluation {
-  id                String           @id @default(cuid())
-  taskId            String
-  datasetRowId      String
-  evaluatorId       String
-  status            EvaluationStatus @default(PENDING)
-  scores            Json             @default("[]")
-  overallScore      Float?
-  comment           String?
-  tags              String[]         @default([])
-  timeSpentSeconds  Int?
-  aiSuggestions     Json?
-  submittedAt       DateTime?
-  createdAt         DateTime         @default(now())
-  updatedAt         DateTime         @updatedAt
+  id               String           @id @default(cuid())
+  taskId           String
+  datasetRowId     String
+  evaluatorId      String
+  status           EvaluationStatus @default(PENDING)
+  scores           Json             @default("[]")
+  overallScore     Float?
+  comment          String?
+  tags             String[]         @default([])
+  timeSpentSeconds Int?
+  aiSuggestions    Json?
+  submittedAt      DateTime?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
 
   task       EvaluationTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
   datasetRow DatasetRow     @relation(fields: [datasetRowId], references: [id], onDelete: Cascade)
@@ -395,21 +404,21 @@ model Evaluation {
 // ─────────────────────────────────────────────
 
 model PairwiseComparison {
-  id               String             @id @default(cuid())
-  taskId           String
-  datasetRowId     String
-  evaluatorId      String
-  responseAId      String
-  responseBId      String
-  verdict          ComparisonVerdict?
-  confidenceScore  Float?
-  reasoning        String?
-  dimensionVerdicts Json              @default("[]")
-  timeSpentSeconds Int?
-  status           String             @default("PENDING")
-  submittedAt      DateTime?
-  createdAt        DateTime           @default(now())
-  updatedAt        DateTime           @updatedAt
+  id                String                   @id @default(cuid())
+  taskId            String
+  datasetRowId      String
+  evaluatorId       String
+  responseAId       String
+  responseBId       String
+  verdict           ComparisonVerdict?
+  confidenceScore   Float?
+  reasoning         String?
+  dimensionVerdicts Json                     @default("[]")
+  timeSpentSeconds  Int?
+  status            PairwiseComparisonStatus @default(PENDING)
+  submittedAt       DateTime?
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
 
   task       EvaluationTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
   datasetRow DatasetRow     @relation(fields: [datasetRowId], references: [id], onDelete: Cascade)
@@ -444,7 +453,7 @@ model RankingResult {
 }
 
 model RankingEntry {
-  id              String  @id @default(cuid())
+  id              String @id @default(cuid())
   rankingResultId String
   responseId      String
   rank            Int
@@ -468,6 +477,7 @@ model Export {
   format         ExportFormat
   status         ExportStatus @default(PENDING)
   fileUrl        String?
+  fileSize       Int?
   filters        Json         @default("{}")
   rowCount       Int?
   errorMessage   String?

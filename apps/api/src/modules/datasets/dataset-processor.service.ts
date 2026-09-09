@@ -1,22 +1,17 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { parse } from 'csv-parse/sync';
 import { PrismaService } from '../../prisma/prisma.service';
-import { Prisma, PromptType } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { DatasetProcessingJobData } from '@scorra/types';
 import { StorageService } from '../../common/services/storage.service';
-
-interface ParsedRow {
-  prompt?: string;
-  input?: string;
-  question?: string;
-  type?: string;
-  context?: string;
-  expected_output?: string;
-  output?: string;
-  metadata?: Record<string, unknown>;
-  tags?: string[];
-  [key: string]: unknown;
-}
+import {
+  ParsedModelResponse,
+  ParsedRow,
+  parseDatasetRows,
+  rowExpectedOutput,
+  rowModelResponses,
+  rowPrompt,
+  rowPromptType,
+} from './dataset-parser';
 
 @Injectable()
 export class DatasetProcessorService {
@@ -31,7 +26,8 @@ export class DatasetProcessorService {
     this.logger.log(`Processing dataset ${data.datasetId}`);
 
     try {
-      const rows = await this.parseFile(data.fileUrl, data.format);
+      const buffer = await this.storage.download(data.fileUrl);
+      const rows = parseDatasetRows(buffer);
 
       if (rows.length === 0) {
         this.logger.warn(`Dataset ${data.datasetId} has 0 rows — marking READY`);
@@ -39,6 +35,7 @@ export class DatasetProcessorService {
           where: { id: data.datasetId },
           data: { status: 'READY', rowCount: 0 },
         });
+        await this.recordVersion(data.datasetId, data.fileUrl, 0, data.uploadedById);
         return { rowCount: 0 };
       }
 
@@ -52,14 +49,10 @@ export class DatasetProcessorService {
           data: batch.map((row, idx) => ({
             datasetId: data.datasetId,
             rowIndex: i + idx,
-            prompt: String(row.prompt || row.input || row.question || ''),
-            promptType: this.resolvePromptType(row.type),
+            prompt: rowPrompt(row),
+            promptType: rowPromptType(row.type),
             context: row.context ? String(row.context) : null,
-            expectedOutput: row.expected_output
-              ? String(row.expected_output)
-              : row.output
-                ? String(row.output)
-                : null,
+            expectedOutput: rowExpectedOutput(row),
             metadata: (row.metadata ?? {}) as Prisma.InputJsonValue,
             tags: (row.tags ?? []) as string[],
           })),
@@ -68,12 +61,18 @@ export class DatasetProcessorService {
         inserted += batch.length;
       }
 
+      // Create model responses from `response` / `responses` columns if present
+      const modelResponses = await this.createModelResponses(data.datasetId, rows);
+
       await this.prisma.dataset.update({
         where: { id: data.datasetId },
         data: { status: 'READY', rowCount: inserted },
       });
+      await this.recordVersion(data.datasetId, data.fileUrl, inserted, data.uploadedById);
 
-      this.logger.log(`Dataset ${data.datasetId} processed: ${inserted} rows`);
+      this.logger.log(
+        `Dataset ${data.datasetId} processed: ${inserted} rows, ${modelResponses} model responses`,
+      );
       return { rowCount: inserted };
     } catch (error) {
       this.logger.error(`Failed to process dataset ${data.datasetId}`, error);
@@ -85,47 +84,74 @@ export class DatasetProcessorService {
     }
   }
 
-  private async parseFile(
-    fileUrl: string,
-    format: string,
-  ): Promise<ParsedRow[]> {
-    this.logger.debug(`Fetching and parsing file: ${fileUrl} as ${format}`);
+  private async createModelResponses(datasetId: string, rows: ParsedRow[]) {
+    // Collect response data first so imports without response columns stay untouched.
+    const withResponses: Array<{ rowIndex: number; responses: ParsedModelResponse[] }> = [];
+    rows.forEach((row, index) => {
+      const parsed = rowModelResponses(row);
+      if (parsed.length) withResponses.push({ rowIndex: index, responses: parsed });
+    });
 
-    const buffer = await this.storage.download(fileUrl);
-    const content = buffer.toString('utf-8');
+    if (withResponses.length === 0) return 0;
 
-    if (format === 'CSV') {
-      return parse(content, {
-        columns: true,
-        skip_empty_lines: true,
-        trim: true,
-        relax_column_count: true,
-      }) as ParsedRow[];
+    const created = await this.prisma.datasetRow.findMany({
+      where: { datasetId },
+      select: { id: true, rowIndex: true },
+    });
+    const rowIdByIndex = new Map(created.map((r) => [r.rowIndex, r.id]));
+
+    const responses: Prisma.ModelResponseCreateManyInput[] = [];
+    for (const entry of withResponses) {
+      const rowId = rowIdByIndex.get(entry.rowIndex);
+      if (!rowId) continue;
+      for (const mr of entry.responses) {
+        responses.push({
+          datasetRowId: rowId,
+          modelId: mr.modelId,
+          modelName: mr.modelName,
+          provider: mr.provider,
+          response: mr.response,
+        });
+      }
     }
 
-    if (format === 'JSON') {
-      const parsed = JSON.parse(content);
-      return Array.isArray(parsed) ? parsed : [parsed];
-    }
+    if (responses.length === 0) return 0;
 
-    if (format === 'JSONL') {
-      return content
-        .split('\n')
-        .map((line) => line.trim())
-        .filter(Boolean)
-        .map((line) => JSON.parse(line) as ParsedRow);
-    }
-
-    throw new Error(`Unsupported format: ${format}`);
+    // The imported file is authoritative for responses: replace any prior
+    // responses on this dataset's rows (e.g. from an earlier version).
+    await this.prisma.modelResponse.deleteMany({
+      where: { datasetRow: { datasetId } },
+    });
+    await this.prisma.modelResponse.createMany({ data: responses });
+    return responses.length;
   }
 
-  private resolvePromptType(type?: string): PromptType {
-    if (!type) return 'COMPLETION';
-    const upper = type.toUpperCase();
-    const validTypes: PromptType[] = [
-      'COMPLETION', 'CHAT', 'INSTRUCTION', 'CLASSIFICATION',
-      'SUMMARIZATION', 'TRANSLATION', 'CUSTOM',
-    ];
-    return validTypes.includes(upper as PromptType) ? (upper as PromptType) : 'COMPLETION';
+  private async recordVersion(
+    datasetId: string,
+    fileUrl: string,
+    rowCount: number,
+    createdById: string,
+  ) {
+    const dataset = await this.prisma.dataset.findUnique({ where: { id: datasetId } });
+    if (!dataset) return;
+
+    const existingVersions = await this.prisma.datasetVersion.count({ where: { datasetId } });
+    const newVersion = existingVersions === 0 ? dataset.version : dataset.version + 1;
+
+    await this.prisma.datasetVersion.create({
+      data: {
+        datasetId,
+        version: newVersion,
+        rowCount,
+        fileUrl,
+        changelog: null,
+        createdById,
+      },
+    });
+
+    await this.prisma.dataset.update({
+      where: { id: datasetId },
+      data: { version: newVersion },
+    });
   }
 }

@@ -37,6 +37,8 @@ export interface Dataset {
   tags: string[];
   createdAt: Date;
   updatedAt: Date;
+  createdBy?: { id: string; name: string; email: string };
+  _count?: { rows?: number; tasks?: number };
 }
 
 export interface DatasetVersion {
@@ -48,6 +50,24 @@ export interface DatasetVersion {
   changelog: string | null;
   createdById: string;
   createdAt: Date;
+}
+
+export type VersionDiffStatus = 'ADDED' | 'REMOVED' | 'MODIFIED';
+
+export interface VersionDiffRow {
+  rowIndex: number;
+  prompt: string;
+  promptType: PromptType;
+  status: VersionDiffStatus;
+}
+
+export interface DatasetVersionDiff {
+  baseVersion: number;
+  currentVersion: number;
+  addedCount: number;
+  removedCount: number;
+  modifiedCount: number;
+  rows: VersionDiffRow[];
 }
 
 export interface DatasetRow {

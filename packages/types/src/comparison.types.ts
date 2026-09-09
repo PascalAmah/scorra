@@ -5,6 +5,13 @@ export enum ComparisonVerdict {
   BOTH_BAD = 'BOTH_BAD',
 }
 
+export enum PairwiseComparisonStatus {
+  PENDING = 'PENDING',
+  IN_PROGRESS = 'IN_PROGRESS',
+  COMPLETED = 'COMPLETED',
+  SKIPPED = 'SKIPPED',
+}
+
 export interface PairwiseComparison {
   id: string;
   taskId: string;
@@ -17,10 +24,14 @@ export interface PairwiseComparison {
   reasoning: string | null;
   dimensionVerdicts: DimensionVerdict[];
   timeSpentSeconds: number | null;
-  status: 'PENDING' | 'COMPLETED' | 'SKIPPED';
+  status: PairwiseComparisonStatus;
   submittedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+  /** Populated when fetched via the admin results endpoint. */
+  evaluator?: { name: string; email: string } | null;
+  /** Populated when fetched via the admin results endpoint. */
+  datasetRow?: { rowIndex: number; prompt: string } | null;
 }
 
 export interface DimensionVerdict {
@@ -47,6 +58,29 @@ export interface ModelRanking {
   score: number | null;
 }
 
+/** A single ranked response inside a submitted ranking (DB RankingEntry + model name). */
+export interface RankingResultEntry {
+  id: string;
+  responseId: string;
+  modelName: string;
+  rank: number;
+  score: number | null;
+}
+
+/** A submitted ranking as returned by the admin task-results endpoint. */
+export interface RankingResultItem {
+  id: string;
+  taskId: string;
+  datasetRowId: string;
+  evaluatorId: string;
+  comment: string | null;
+  submittedAt: Date | null;
+  createdAt: Date;
+  entries: RankingResultEntry[];
+  evaluator?: { id: string; name: string; email: string } | null;
+  datasetRow?: { id: string; rowIndex: number; prompt: string } | null;
+}
+
 export interface SubmitComparisonRequest {
   taskId: string;
   datasetRowId: string;
@@ -57,4 +91,39 @@ export interface SubmitComparisonRequest {
   reasoning?: string;
   dimensionVerdicts?: DimensionVerdict[];
   timeSpentSeconds?: number;
+}
+
+/** A single response rendered inside a comparison or ranking workflow. */
+export interface ResponseView {
+  id: string;
+  modelName: string;
+  response: string;
+}
+
+/** Payload for the next PAIRWISE comparison item in a task workflow. */
+export interface NextComparison {
+  done: boolean;
+  message?: string;
+  datasetRowId?: string;
+  prompt?: string;
+  context?: string | null;
+  responseA?: ResponseView;
+  responseB?: ResponseView;
+}
+
+/** A response to be ranked in a RANKING workflow. */
+export interface RankedResponse {
+  id: string;
+  modelName: string;
+  response: string;
+}
+
+/** Payload for the next RANKING set in a task workflow. */
+export interface NextRanking {
+  done: boolean;
+  message?: string;
+  datasetRowId?: string;
+  prompt?: string;
+  context?: string | null;
+  responses?: RankedResponse[];
 }

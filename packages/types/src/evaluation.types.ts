@@ -25,6 +25,8 @@ export enum ScoreDimension {
   CUSTOM = 'CUSTOM',
 }
 
+export type EvaluationTaskStatus = 'DRAFT' | 'ACTIVE' | 'PAUSED' | 'COMPLETED' | 'ARCHIVED';
+
 export interface EvaluationTask {
   id: string;
   organizationId: string;
@@ -34,11 +36,18 @@ export interface EvaluationTask {
   type: EvaluationType;
   scoringCriteria: ScoringCriteria[];
   assignedEvaluatorIds: string[];
-  status: 'DRAFT' | 'ACTIVE' | 'PAUSED' | 'COMPLETED' | 'ARCHIVED';
+  status: EvaluationTaskStatus;
   dueDate: Date | null;
   createdById: string;
   createdAt: Date;
   updatedAt: Date;
+  dataset?: { id: string; name: string; rowCount: number };
+  createdBy?: { id: string; name: string };
+  assignments?: Array<{ id: string; evaluatorId: string; assignedAt: Date }>;
+  _count?: { evaluations?: number; assignments?: number; comparisons?: number };
+  myCounts?: { evaluations: number; comparisons: number; rankings: number };
+  /** Number of DISTINCT dataset rows with a COMPLETED evaluation/comparison (org-wide). */
+  completedRows?: number;
 }
 
 export interface ScoringCriteria {
@@ -66,6 +75,8 @@ export interface Evaluation {
   submittedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+  evaluator?: { id: string; name: string; email: string };
+  datasetRow?: { id: string; rowIndex: number; prompt: string };
 }
 
 export interface EvaluationScore {
@@ -77,13 +88,17 @@ export interface EvaluationScore {
 }
 
 export interface AISuggestion {
-  suggestedScores: Partial<Record<ScoreDimension, number>>;
+  suggestedScores: Record<string, number>;
+  /** Free-text explanation per scored dimension, when available. */
+  dimensionExplanations?: Record<string, string> | null;
   hallucinationDetected: boolean;
   hallucinationDetails: string | null;
   qualityLabel: 'EXCELLENT' | 'GOOD' | 'FAIR' | 'POOR' | null;
   reasoning: string | null;
   confidence: number;
   generatedAt: Date;
+  tokensUsed: number;
+  latencyMs: number;
 }
 
 export interface SubmitEvaluationRequest {
@@ -108,4 +123,46 @@ export interface ModelResponse {
   latencyMs: number | null;
   metadata: Record<string, unknown>;
   createdAt: Date;
+}
+
+/** Aggregate progress for an evaluation task. */
+export interface TaskProgress {
+  taskId: string;
+  totalRows: number;
+  completedEvaluations: number;
+  pendingEvaluations: number;
+  assignments: number;
+  completionRate: number;
+  /** Count of items the requesting evaluator has completed for this task, per task type. */
+  myCompleted?: number;
+}
+
+/** Index signature used to track per-dimension scores on the evaluate screen. */
+export interface ScoreState {
+  [dimension: string]: number;
+}
+
+/** Payload for the next SINGLE-scoring item in a task workflow. */
+export interface NextEvaluationItem {
+  completed: boolean;
+  message?: string;
+  evaluation?: {
+    id: string;
+    status: string;
+    aiSuggestions?: AISuggestion | null;
+  };
+  datasetRow?: {
+    id: string;
+    rowIndex: number;
+    prompt: string;
+    context: string | null;
+    expectedOutput: string | null;
+    modelResponses: ModelResponse[];
+  };
+  task?: {
+    id: string;
+    name: string;
+    type: EvaluationType;
+    scoringCriteria: ScoringCriteria[];
+  };
 }

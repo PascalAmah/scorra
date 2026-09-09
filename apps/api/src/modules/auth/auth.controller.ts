@@ -6,6 +6,7 @@ import {
   HttpStatus,
   Get,
   Patch,
+  Param,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
@@ -69,5 +70,15 @@ export class AuthController {
   ) {
     await this.authService.changePassword(user.sub, dto.currentPassword, dto.newPassword);
     return { message: 'Password changed successfully' };
+  }
+
+  @Post('switch-org/:orgId')
+  @ApiBearerAuth('JWT')
+  @ApiOperation({ summary: 'Switch active organization' })
+  async switchOrg(
+    @CurrentUser() user: AuthTokenPayload,
+    @Param('orgId') orgId: string,
+  ) {
+    return this.authService.switchOrg(user.sub, orgId);
   }
 }

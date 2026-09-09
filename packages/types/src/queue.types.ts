@@ -54,13 +54,12 @@ export interface AnalyticsComputationJobData {
   computationType: 'AGREEMENT_METRICS' | 'SCORE_TRENDS' | 'EVALUATOR_METRICS' | 'FULL_REFRESH';
 }
 
-// Model inference job
+// Model inference job — generates AI responses for rows of a dataset
+// that don't have a model response yet.
 export interface ModelInferenceJobData {
-  datasetRowId: string;
-  prompt: string;
-  modelConfigs: ModelConfig[];
-  taskId: string;
+  datasetId: string;
   organizationId: string;
+  requestedById: string;
 }
 
 export interface ModelConfig {

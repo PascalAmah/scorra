@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { OrganizationsService } from './organizations.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotFoundException, ForbiddenException, ConflictException } from '@nestjs/common';
+import { UserRole } from '@scorra/types';
 
 describe('OrganizationsService', () => {
   let service: OrganizationsService;
@@ -94,24 +95,24 @@ describe('OrganizationsService', () => {
 
     it('should change member role', async () => {
       prisma.organizationMember.findFirst
-        .mockResolvedValueOnce({ role: 'ORG_ADMIN' })
-        .mockResolvedValueOnce({ id: 'm-1', role: 'EVALUATOR' });
-      prisma.organizationMember.update.mockResolvedValue({ id: 'm-1', role: 'ORG_ADMIN', user: { id: 'target', name: 'T', email: 't@t.com' } });
-      const result = await service.changeMemberRole(orgId, 'target', userId, { role: 'ORG_ADMIN' });
-      expect(result.role).toBe('ORG_ADMIN');
+        .mockResolvedValueOnce({ role: UserRole.ORG_ADMIN })
+        .mockResolvedValueOnce({ id: 'm-1', role: UserRole.EVALUATOR });
+      prisma.organizationMember.update.mockResolvedValue({ id: 'm-1', role: UserRole.ORG_ADMIN, user: { id: 'target', name: 'T', email: 't@t.com' } });
+      const result = await service.changeMemberRole(orgId, 'target', userId, { role: UserRole.ORG_ADMIN });
+      expect(result.role).toBe(UserRole.ORG_ADMIN);
     });
 
     it('should throw if not org admin', async () => {
-      prisma.organizationMember.findFirst.mockResolvedValue({ role: 'EVALUATOR' });
-      await expect(service.changeMemberRole(orgId, 'target', userId, { role: 'ORG_ADMIN' })).rejects.toThrow(ForbiddenException);
+      prisma.organizationMember.findFirst.mockResolvedValue({ role: UserRole.EVALUATOR });
+      await expect(service.changeMemberRole(orgId, 'target', userId, { role: UserRole.ORG_ADMIN })).rejects.toThrow(ForbiddenException);
     });
   });
 
   describe('invitations', () => {
     it('should create invitation', async () => {
-      prisma.organizationMember.findFirst.mockResolvedValue({ role: 'ORG_ADMIN' });
-      prisma.invitation.create.mockResolvedValue({ id: 'inv-1', email: 'new@test.com', organizationId: orgId, role: 'EVALUATOR' });
-      const result = await service.invite(orgId, userId, { email: 'new@test.com', role: 'EVALUATOR' });
+      prisma.organizationMember.findFirst.mockResolvedValue({ role: UserRole.ORG_ADMIN });
+      prisma.invitation.create.mockResolvedValue({ id: 'inv-1', email: 'new@test.com', organizationId: orgId, role: UserRole.EVALUATOR });
+      const result = await service.invite(orgId, userId, { email: 'new@test.com', role: UserRole.EVALUATOR });
       expect(result.email).toBe('new@test.com');
     });
 

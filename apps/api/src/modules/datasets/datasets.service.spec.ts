@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { DatasetsService } from './datasets.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StorageService } from '../../common/services/storage.service';
+import { AiService } from '../ai/ai.service';
 import { getQueueToken } from '@nestjs/bull';
 import { QueueName, DatasetFormat } from '@scorra/types';
 import { NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
@@ -28,9 +29,15 @@ describe('DatasetsService', () => {
       create: jest.Mock;
       findMany: jest.Mock;
     };
+    evaluationTask: { deleteMany: jest.Mock };
   };
   let storage: { upload: jest.Mock; download: jest.Mock; delete: jest.Mock; getUrl: jest.Mock };
   let queue: { add: jest.Mock };
+  let aiService: {
+    isGenerationConfigured: jest.Mock;
+    getGenerationInfo: jest.Mock;
+    generateResponse: jest.Mock;
+  };
 
   const orgId = 'org-1';
   const userId = 'user-1';
@@ -73,6 +80,7 @@ describe('DatasetsService', () => {
         create: jest.fn(),
         findMany: jest.fn(),
       },
+      evaluationTask: { deleteMany: jest.fn() },
     };
 
     storage = {
@@ -84,12 +92,22 @@ describe('DatasetsService', () => {
 
     queue = { add: jest.fn() };
 
+    aiService = {
+      isGenerationConfigured: jest.fn().mockReturnValue(true),
+      getGenerationInfo: jest
+        .fn()
+        .mockReturnValue({ provider: 'openai', modelId: 'gpt-4o', modelName: 'gpt-4o' }),
+      generateResponse: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         DatasetsService,
         { provide: PrismaService, useValue: prisma },
         { provide: StorageService, useValue: storage },
+        { provide: AiService, useValue: aiService },
         { provide: getQueueToken(QueueName.DATASET_PROCESSING), useValue: queue },
+        { provide: getQueueToken(QueueName.MODEL_INFERENCE), useValue: queue },
       ],
     }).compile();
 

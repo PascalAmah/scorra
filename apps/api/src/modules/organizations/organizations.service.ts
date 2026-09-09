@@ -1,16 +1,24 @@
 import { Injectable, NotFoundException, ConflictException, ForbiddenException, Logger } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bull';
+import { Queue } from 'bull';
+import { randomBytes } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateOrganizationDto } from './dto/create-organization.dto';
 import { UpdateOrganizationDto } from './dto/update-organization.dto';
 import { InviteMemberDto } from './dto/invite-member.dto';
 import { ChangeMemberRoleDto } from './dto/change-member-role.dto';
-import { UserRole } from '@scorra/types';
+import { QueueName } from '@scorra/types';
+import type { InvitationEmailJobData } from '../queue/workers/email-notifications.worker';
 
 @Injectable()
 export class OrganizationsService {
   private readonly logger = new Logger(OrganizationsService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @InjectQueue(QueueName.EMAIL_NOTIFICATIONS)
+    private readonly emailQueue: Queue,
+  ) {}
 
   async findAll(userId: string) {
     return this.prisma.organization.findMany({
@@ -57,10 +65,18 @@ export class OrganizationsService {
   async update(id: string, userId: string, dto: UpdateOrganizationDto) {
     await this.ensureOrgAdmin(id, userId);
 
+    if (dto.slug) {
+      const existing = await this.prisma.organization.findUnique({ where: { slug: dto.slug } });
+      if (existing && existing.id !== id) {
+        throw new ConflictException('Organization with this slug already exists');
+      }
+    }
+
     return this.prisma.organization.update({
       where: { id },
       data: {
         ...(dto.name !== undefined && { name: dto.name }),
+        ...(dto.slug !== undefined && { slug: dto.slug }),
         ...(dto.logoUrl !== undefined && { logoUrl: dto.logoUrl }),
         ...(dto.settings !== undefined && { settings: dto.settings as any }),
       },
@@ -113,6 +129,17 @@ export class OrganizationsService {
   async invite(orgId: string, userId: string, dto: InviteMemberDto) {
     await this.ensureOrgAdmin(orgId, userId);
 
+    const org = await this.prisma.organization.findUnique({
+      where: { id: orgId },
+      select: { name: true },
+    });
+    if (!org) throw new NotFoundException('Organization not found');
+
+    const inviter = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { name: true },
+    });
+
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
 
@@ -126,8 +153,43 @@ export class OrganizationsService {
       },
     });
 
-    this.logger.log(`Invitation sent to ${dto.email} for org ${orgId}`);
+    // Enqueue the invitation email — fire-and-forget via the queue
+    const jobData: InvitationEmailJobData = {
+      to: invitation.email,
+      invitedByName: inviter?.name ?? 'Someone',
+      organizationName: org.name,
+      role: invitation.role,
+      invitationToken: invitation.token,
+      expiresAt: expiresAt.toISOString(),
+    };
+    await this.emailQueue.add('send-invitation', jobData, { attempts: 3, backoff: { type: 'exponential', delay: 5000 } });
+
+    this.logger.log(`Invitation queued for ${dto.email} in org ${orgId}`);
     return invitation;
+  }
+
+  async getInvitationByToken(token: string) {
+    const invitation = await this.prisma.invitation.findUnique({
+      where: { token },
+      include: {
+        organization: { select: { name: true } },
+        createdBy: { select: { name: true } },
+      },
+    });
+
+    if (!invitation) throw new NotFoundException('Invitation not found');
+    if (invitation.expiresAt < new Date()) throw new ForbiddenException('Invitation has expired');
+    if (invitation.acceptedAt) throw new ConflictException('Invitation already accepted');
+
+    return {
+      token: invitation.token,
+      email: invitation.email,
+      role: invitation.role,
+      expiresAt: invitation.expiresAt,
+      organizationId: invitation.organizationId,
+      organizationName: invitation.organization.name,
+      invitedByName: invitation.createdBy.name,
+    };
   }
 
   async acceptInvitation(token: string, userId: string) {
@@ -157,6 +219,79 @@ export class OrganizationsService {
 
     this.logger.log(`User ${userId} accepted invitation to org ${invitation.organizationId}`);
     return { message: 'Invitation accepted', organizationId: invitation.organizationId };
+  }
+
+  async listInvitations(orgId: string, _userId: string) {
+    return this.prisma.invitation.findMany({
+      where: { organizationId: orgId, acceptedAt: null },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        email: true,
+        organizationId: true,
+        role: true,
+        token: true,
+        expiresAt: true,
+        acceptedAt: true,
+        createdById: true,
+        createdAt: true,
+      },
+    });
+  }
+
+  async resendInvitation(orgId: string, invitationId: string, userId: string) {
+    await this.ensureOrgAdmin(orgId, userId);
+
+    const invitation = await this.prisma.invitation.findFirst({
+      where: { id: invitationId, organizationId: orgId },
+      include: { organization: { select: { name: true } } },
+    });
+    if (!invitation) throw new NotFoundException('Invitation not found');
+    if (invitation.acceptedAt) throw new ConflictException('Invitation already accepted');
+
+    const inviter = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { name: true },
+    });
+
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7);
+
+    const updated = await this.prisma.invitation.update({
+      where: { id: invitation.id },
+      data: { token: this.generateToken(), expiresAt, createdAt: new Date(), createdById: userId },
+    });
+
+    // Enqueue the resend email
+    const jobData: InvitationEmailJobData = {
+      to: updated.email,
+      invitedByName: inviter?.name ?? 'Someone',
+      organizationName: invitation.organization.name,
+      role: updated.role,
+      invitationToken: updated.token,
+      expiresAt: expiresAt.toISOString(),
+    };
+    await this.emailQueue.add('send-invitation', jobData, { attempts: 3, backoff: { type: 'exponential', delay: 5000 } });
+
+    this.logger.log(`Invitation ${invitation.id} resent to ${invitation.email}`);
+    return updated;
+  }
+
+  async revokeInvitation(orgId: string, invitationId: string, userId: string) {
+    await this.ensureOrgAdmin(orgId, userId);
+
+    const invitation = await this.prisma.invitation.findFirst({
+      where: { id: invitationId, organizationId: orgId },
+    });
+    if (!invitation) throw new NotFoundException('Invitation not found');
+
+    await this.prisma.invitation.delete({ where: { id: invitation.id } });
+    this.logger.log(`Invitation ${invitation.id} revoked for ${invitation.email} by user ${userId}`);
+    return { message: 'Invitation revoked' };
+  }
+
+  private generateToken(): string {
+    return randomBytes(32).toString('hex');
   }
 
   private async ensureOrgAdmin(orgId: string, userId: string) {

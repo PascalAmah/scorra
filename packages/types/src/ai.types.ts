@@ -1,7 +1,9 @@
 export enum AIProvider {
   OPENAI = 'openai',
   ANTHROPIC = 'anthropic',
-  LANGCHAIN = 'langchain',
+  GROQ = 'groq',
+  GEMINI = 'gemini',
+  CUSTOM = 'custom',
 }
 
 export interface HallucinationDetectionResult {
@@ -58,6 +60,7 @@ export interface AIEvaluationRequest {
 
 export interface AIEvaluationResult {
   scores: Record<string, number>;
+  dimensionExplanations: Record<string, string>;
   overallScore: number;
   reasoning: string;
   hallucinationDetection: HallucinationDetectionResult;

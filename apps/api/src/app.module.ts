@@ -59,11 +59,7 @@ import aiConfig from './config/ai.config';
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
-        redis: {
-          host: config.get<string>('REDIS_HOST', 'localhost'),
-          port: config.get<number>('REDIS_PORT', 6379),
-          password: config.get<string>('REDIS_PASSWORD'),
-        },
+        redis: config.get<string>('REDIS_URL', 'redis://localhost:6379'),
         defaultJobOptions: {
           attempts: 3,
           backoff: {

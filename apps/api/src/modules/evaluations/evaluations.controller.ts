@@ -2,8 +2,12 @@ import { Controller, Get, Post, Patch, Body, Param, Query } from '@nestjs/common
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { EvaluationsService } from './evaluations.service';
 import { EvaluationTasksService } from './evaluation-tasks.service';
+import { AiService } from '../ai/ai.service';
 import { CreateEvaluationTaskDto } from './dto/create-evaluation-task.dto';
 import { SubmitEvaluationDto } from './dto/submit-evaluation.dto';
+import { UpdateEvaluationTaskDto } from './dto/update-evaluation-task.dto';
+import { AutoLabelDto } from './dto/auto-label.dto';
+import { TaskResultsQueryDto } from './dto/task-results-query.dto';
 import { PaginationDto } from '../../common/dto/pagination.dto';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CurrentOrgId } from '../../common/decorators/current-org.decorator';
@@ -17,6 +21,7 @@ export class EvaluationsController {
   constructor(
     private readonly evaluationsService: EvaluationsService,
     private readonly tasksService: EvaluationTasksService,
+    private readonly aiService: AiService,
   ) {}
 
   // ── Tasks ──────────────────────────────────────────────────────────────
@@ -34,8 +39,12 @@ export class EvaluationsController {
 
   @Get('tasks')
   @ApiOperation({ summary: 'List evaluation tasks' })
-  listTasks(@CurrentOrgId() orgId: string, @Query() query: PaginationDto) {
-    return this.tasksService.findAll(orgId, query);
+  listTasks(
+    @CurrentOrgId() orgId: string,
+    @Query() query: PaginationDto,
+    @CurrentUser() user?: AuthTokenPayload,
+  ) {
+    return this.tasksService.findAll(orgId, query, user);
   }
 
   @Get('tasks/:taskId')
@@ -53,13 +62,36 @@ export class EvaluationsController {
 
   @Get('tasks/:taskId/progress')
   @ApiOperation({ summary: 'Get task completion progress' })
-  getProgress(@Param('taskId') taskId: string, @CurrentOrgId() orgId: string) {
-    return this.tasksService.getProgress(taskId, orgId);
+  getProgress(
+    @Param('taskId') taskId: string,
+    @CurrentUser() user: AuthTokenPayload,
+    @CurrentOrgId() orgId: string,
+  ) {
+    return this.tasksService.getProgress(taskId, orgId, user.sub);
+  }
+
+  @Get('tasks/:taskId/disagreement')
+  @ApiOperation({ summary: 'Analyze evaluator disagreement on a task' })
+  getDisagreement(@Param('taskId') taskId: string, @CurrentOrgId() orgId: string) {
+    return this.evaluationsService.analyzeDisagreement(taskId, orgId);
+  }
+
+  @Get('tasks/:taskId/summary')
+  @ApiOperation({ summary: 'Summarize evaluator feedback for a task' })
+  getFeedbackSummary(@Param('taskId') taskId: string, @CurrentOrgId() orgId: string) {
+    return this.evaluationsService.getFeedbackSummary(taskId, orgId);
+  }
+
+  @Post('auto-label')
+  @ApiOperation({ summary: 'Auto-label an evaluation comment' })
+  autoLabel(@Body() dto: AutoLabelDto) {
+    return this.aiService.autoLabelComment(dto.comment);
   }
 
   // ── Evaluation workflow ────────────────────────────────────────────────
 
   @Get('tasks/:taskId/next')
+  @Roles(UserRole.EVALUATOR)
   @ApiOperation({ summary: 'Get next item to evaluate in a task' })
   getNextItem(
     @Param('taskId') taskId: string,
@@ -70,9 +102,32 @@ export class EvaluationsController {
   }
 
   @Post('submit')
+  @Roles(UserRole.EVALUATOR)
   @ApiOperation({ summary: 'Submit an evaluation' })
-  submit(@CurrentUser() user: AuthTokenPayload, @Body() dto: SubmitEvaluationDto) {
-    return this.evaluationsService.submit(user.sub, dto);
+  submit(
+    @CurrentUser() user: AuthTokenPayload,
+    @CurrentOrgId() orgId: string,
+    @Body() dto: SubmitEvaluationDto,
+  ) {
+    return this.evaluationsService.submit(user.sub, dto, orgId);
+  }
+
+  @Patch('tasks/:taskId/pause')
+  @Roles(UserRole.ORG_ADMIN, UserRole.SUPER_ADMIN)
+  @ApiOperation({ summary: 'Pause an active evaluation task' })
+  pauseTask(@Param('taskId') taskId: string, @CurrentOrgId() orgId: string) {
+    return this.tasksService.pause(taskId, orgId);
+  }
+
+  @Patch('tasks/:taskId')
+  @Roles(UserRole.ORG_ADMIN, UserRole.SUPER_ADMIN)
+  @ApiOperation({ summary: 'Update an evaluation task' })
+  updateTask(
+    @Param('taskId') taskId: string,
+    @CurrentOrgId() orgId: string,
+    @Body() dto: UpdateEvaluationTaskDto,
+  ) {
+    return this.tasksService.update(taskId, orgId, dto);
   }
 
   @Post(':evaluationId/ai-suggestions')
@@ -89,7 +144,7 @@ export class EvaluationsController {
   getTaskResults(
     @Param('taskId') taskId: string,
     @CurrentOrgId() orgId: string,
-    @Query() query: PaginationDto,
+    @Query() query: TaskResultsQueryDto,
   ) {
     return this.evaluationsService.findByTask(taskId, orgId, query);
   }

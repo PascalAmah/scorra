@@ -60,15 +60,4 @@ export class ExportsService {
       },
     });
   }
-
-  async getDownloadUrl(id: string, organizationId: string) {
-    const exportRecord = await this.prisma.export.findFirst({
-      where: { id, organizationId },
-    });
-    if (!exportRecord) throw new NotFoundException('Export not found');
-    if (exportRecord.status !== 'READY' || !exportRecord.fileUrl) {
-      throw new NotFoundException('Export not ready for download');
-    }
-    return { downloadUrl: exportRecord.fileUrl, format: exportRecord.format };
-  }
 }

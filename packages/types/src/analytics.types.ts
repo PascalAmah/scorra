@@ -20,6 +20,7 @@ export interface EvaluatorMetrics {
   agreementRate: number;
   consistencyScore: number;
   completionRate: number;
+  averageScore: number;
   evaluationPeriod: DateRange;
 }
 
@@ -36,6 +37,32 @@ export interface PairwiseAgreement {
   evaluatorBId: string;
   agreementRate: number;
   cohensKappa: number | null;
+}
+
+export interface ScoreDistributionBucket {
+  bucket: string;
+  count: number;
+}
+
+export interface DimensionBreakdown {
+  dimension: string;
+  label: string;
+  averageScore: number;
+  minScore: number;
+  maxScore: number;
+  count: number;
+}
+
+export interface TaskScoreAnalytics {
+  taskId: string;
+  totalEvaluations: number;
+  averageScore: number | null;
+  medianScore: number | null;
+  minScore: number | null;
+  maxScore: number | null;
+  distribution: ScoreDistributionBucket[];
+  dimensions: DimensionBreakdown[];
+  qualityLabelBreakdown: Array<{ label: string; count: number }>;
 }
 
 export interface ScoreTrend {

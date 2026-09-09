@@ -85,9 +85,43 @@ export class OrganizationsController {
     return this.organizationsService.invite(id, user.sub, dto);
   }
 
+  @Get(':id/invitations')
+  @ApiOperation({ summary: 'List pending invitations for the organization' })
+  listInvitations(@Param('id') id: string, @CurrentUser() user: AuthTokenPayload) {
+    return this.organizationsService.listInvitations(id, user.sub);
+  }
+
+  @Post(':id/invitations/:invitationId/resend')
+  @Roles(UserRole.ORG_ADMIN, UserRole.SUPER_ADMIN)
+  @ApiOperation({ summary: 'Resend a pending invitation with a fresh token and expiry' })
+  resendInvitation(
+    @Param('id') id: string,
+    @Param('invitationId') invitationId: string,
+    @CurrentUser() user: AuthTokenPayload,
+  ) {
+    return this.organizationsService.resendInvitation(id, invitationId, user.sub);
+  }
+
+  @Delete(':id/invitations/:invitationId')
+  @Roles(UserRole.ORG_ADMIN, UserRole.SUPER_ADMIN)
+  @ApiOperation({ summary: 'Revoke a pending invitation' })
+  revokeInvitation(
+    @Param('id') id: string,
+    @Param('invitationId') invitationId: string,
+    @CurrentUser() user: AuthTokenPayload,
+  ) {
+    return this.organizationsService.revokeInvitation(id, invitationId, user.sub);
+  }
+
   @Public()
+  @Get('/invitations/:token')
+  @ApiOperation({ summary: 'Get invitation details by token (public)' })
+  getInvitation(@Param('token') token: string) {
+    return this.organizationsService.getInvitationByToken(token);
+  }
+
   @Post('/invitations/:token/accept')
-  @ApiOperation({ summary: 'Accept an invitation (public)' })
+  @ApiOperation({ summary: 'Accept an invitation (requires auth)' })
   acceptInvitation(@Param('token') token: string, @CurrentUser() user: AuthTokenPayload) {
     return this.organizationsService.acceptInvitation(token, user.sub);
   }

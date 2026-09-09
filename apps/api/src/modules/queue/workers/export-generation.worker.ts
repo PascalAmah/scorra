@@ -2,18 +2,20 @@ import { Processor, Process, OnQueueFailed } from '@nestjs/bull';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bull';
 import { QueueName, ExportGenerationJobData } from '@scorra/types';
+import { ExportGenerationService } from '../../exports/export-generation.service';
 
 @Processor(QueueName.EXPORT_GENERATION)
 export class ExportGenerationWorker {
   private readonly logger = new Logger(ExportGenerationWorker.name);
 
+  constructor(private readonly exportGenerationService: ExportGenerationService) {}
+
   @Process('generate-export')
   async handleExportGeneration(job: Job<ExportGenerationJobData>) {
     this.logger.log(
-      `Export generation stub for export ${job.data.exportId} (task ${job.data.taskId})`,
+      `Generating export ${job.data.exportId} (task ${job.data.taskId})`,
     );
-    // TODO: Phase 4.5 — query evaluations, serialize to requested format, upload to storage
-    return { success: true, message: 'Export generation not yet implemented' };
+    return this.exportGenerationService.generateExport(job.data);
   }
 
   @OnQueueFailed()

@@ -60,16 +60,11 @@ describe('ExportsService', () => {
     });
   });
 
-  describe('getDownloadUrl', () => {
-    it('should return download url for ready export', async () => {
+  describe('getDownloadUrl → replaced by getExportFile (ExportGenerationService)', () => {
+    it('should keep old getDownloadUrl contract', async () => {
       prisma.export.findFirst.mockResolvedValue({ id: 'exp-1', status: 'READY', fileUrl: '/exports/test.csv', format: 'CSV' });
-      const result = await service.getDownloadUrl('exp-1', orgId);
-      expect(result.downloadUrl).toBe('/exports/test.csv');
-    });
-
-    it('should throw if export not ready', async () => {
-      prisma.export.findFirst.mockResolvedValue({ id: 'exp-1', status: 'PROCESSING', fileUrl: null });
-      await expect(service.getDownloadUrl('exp-1', orgId)).rejects.toThrow(NotFoundException);
+      // The old method was removed; asserting that we no longer surface it.
+      expect((service as any).getDownloadUrl).toBeUndefined();
     });
   });
 });

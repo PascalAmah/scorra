@@ -34,8 +34,8 @@ export class UsersService {
     const member = await this.prisma.organizationMember.findFirst({
       where: { organizationId, userId },
     });
-    if (!member || (member.role !== 'ORG_ADMIN' && member.role !== 'SUPER_ADMIN')) {
-      throw new ForbiddenException('Only org admins can list users');
+    if (!member) {
+      throw new ForbiddenException('Not a member of this organization');
     }
 
     return this.prisma.organizationMember.findMany({

@@ -42,7 +42,7 @@ export class AuthService {
           email: dto.email.toLowerCase(),
           passwordHash,
           name: dto.name,
-          role: UserRole.ORG_ADMIN,
+          role: dto.organizationName ? UserRole.ORG_ADMIN : UserRole.EVALUATOR,
           status: 'ACTIVE',
         },
       });
@@ -109,7 +109,7 @@ export class AuthService {
       data: { lastLoginAt: new Date() },
     });
 
-    const userWithOrg = { ...user, organizationId: membership?.organizationId ?? null };
+    const userWithOrg = { ...user, organizationId: membership?.organizationId ?? null, organizationRole: membership?.role };
     const tokens = await this.generateTokens(userWithOrg);
 
     return {
@@ -142,9 +142,39 @@ export class AuthService {
     const userWithOrg = {
       ...tokenRecord.user,
       organizationId: membership?.organizationId ?? null,
+      organizationRole: membership?.role,
     };
 
     return this.generateTokens(userWithOrg);
+  }
+
+  async switchOrg(userId: string, targetOrgId: string) {
+    const membership = await this.prisma.organizationMember.findFirst({
+      where: { userId, organizationId: targetOrgId },
+    });
+
+    if (!membership) {
+      throw new UnauthorizedException('Not a member of this organization');
+    }
+
+    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
+
+    const userWithOrg = {
+      ...user,
+      organizationId: membership.organizationId,
+      organizationRole: membership.role,
+    };
+
+    const tokens = await this.generateTokens(userWithOrg);
+
+    return {
+      ...tokens,
+      user: this.sanitizeUser({
+        ...user,
+        organizationId: membership.organizationId,
+        organizationRole: membership.role,
+      }),
+    };
   }
 
   async logout(userId: string, refreshToken?: string) {
@@ -184,6 +214,16 @@ export class AuthService {
       throw new UnauthorizedException('User not found or inactive');
     }
 
+    // Verify org membership if org context is present in the token
+    if (payload.organizationId) {
+      const membership = await this.prisma.organizationMember.findFirst({
+        where: { userId: user.id, organizationId: payload.organizationId },
+      });
+      if (!membership) {
+        throw new UnauthorizedException('No longer a member of this organization');
+      }
+    }
+
     return user;
   }
 
@@ -192,12 +232,14 @@ export class AuthService {
     email: string;
     role: string;
     organizationId: string | null;
+    organizationRole?: string;
   }) {
     const payload: AuthTokenPayload = {
       sub: user.id,
       email: user.email,
       role: user.role as UserRole,
       organizationId: user.organizationId,
+      organizationRole: (user.organizationRole ?? user.role) as UserRole,
     };
 
     const [accessToken, refreshToken] = await Promise.all([
@@ -227,6 +269,7 @@ export class AuthService {
     role: string;
     status: string;
     organizationId: string | null;
+    organizationRole?: string;
     avatarUrl?: string | null;
   }) {
     return {
@@ -236,6 +279,7 @@ export class AuthService {
       role: user.role as UserRole,
       status: user.status,
       organizationId: user.organizationId,
+      organizationRole: (user.organizationRole ?? user.role) as UserRole,
       avatarUrl: user.avatarUrl ?? null,
     };
   }

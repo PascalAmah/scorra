@@ -2,6 +2,21 @@ import { IsString, IsEnum, IsOptional, IsArray, IsNumber, Min, Max } from 'class
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ComparisonVerdict } from '@scorra/types';
 
+export class DimensionVerdictDto {
+  @ApiProperty()
+  @IsString()
+  dimension: string;
+
+  @ApiProperty({ enum: ComparisonVerdict })
+  @IsEnum(ComparisonVerdict)
+  verdict: ComparisonVerdict;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  note?: string;
+}
+
 export class SubmitComparisonDto {
   @ApiProperty()
   @IsString()
@@ -35,10 +50,10 @@ export class SubmitComparisonDto {
   @IsString()
   reasoning?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ type: () => [DimensionVerdictDto] })
   @IsOptional()
   @IsArray()
-  dimensionVerdicts?: { dimension: string; verdict: ComparisonVerdict; note?: string }[];
+  dimensionVerdicts?: DimensionVerdictDto[];
 
   @ApiPropertyOptional()
   @IsOptional()

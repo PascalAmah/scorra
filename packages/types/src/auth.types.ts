@@ -29,6 +29,7 @@ export interface AuthTokenPayload {
   email: string;
   role: UserRole;
   organizationId: string | null;
+  organizationRole?: UserRole;
   iat?: number;
   exp?: number;
 }
@@ -48,7 +49,7 @@ export interface RegisterRequest {
 export interface AuthResponse {
   accessToken: string;
   refreshToken: string;
-  user: Omit<User, 'createdAt' | 'updatedAt'>;
+  user: Omit<User, 'createdAt' | 'updatedAt'> & { organizationRole?: UserRole };
 }
 
 export interface RefreshTokenRequest {

@@ -1,388 +1,546 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import { useEffect, useMemo, useState } from 'react';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
+import { Copy01Icon, Download01Icon, Search01Icon } from 'hugeicons-react';
+
+import { AppShell } from '@/components/dashboard/shell';
+import { DatasetHeader } from '@/components/datasets/dataset-header';
+import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import {
+  useArchiveDataset,
+  useCloneDataset,
+  useDataset,
+  useDatasetRows,
+  useDeleteDataset,
+  useGenerateDatasetResponses,
+  useUpdateDataset,
+} from '@/hooks/use-datasets';
 import { api } from '@/lib/api';
+import type { Dataset, DatasetRow, Pagination } from '@scorra/types';
+import { cn, formatDate, formatNumber } from '@/lib/utils';
 
-interface DatasetRow {
-  id: string;
-  rowIndex: number;
-  prompt: string;
-  promptType: string;
-  context: string | null;
-  expectedOutput: string | null;
-  tags: string[];
-}
-
-interface Dataset {
-  id: string;
-  name: string;
-  description: string | null;
-  format: string;
-  status: string;
-  version: number;
-  rowCount: number;
-  tags: string[];
-  fileUrl: string | null;
-  createdAt: string;
-  updatedAt: string;
-  createdBy?: { id: string; name: string; email: string };
-}
-
-interface Pagination {
-  page: number;
-  limit: number;
-  total: number;
-  totalPages: number;
-  hasNext: boolean;
-  hasPrev: boolean;
-}
-
-const STATUS_COLORS: Record<string, string> = {
-  READY: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
-  PROCESSING: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
-  PENDING: 'bg-zinc-500/10 text-zinc-400 border-zinc-500/20',
-  FAILED: 'bg-red-500/10 text-red-400 border-red-500/20',
-  ARCHIVED: 'bg-zinc-500/10 text-zinc-500 border-zinc-500/20',
-};
-
-const PROMPT_TYPE_COLORS: Record<string, string> = {
-  COMPLETION: 'bg-blue-500/10 text-blue-400',
-  CHAT: 'bg-purple-500/10 text-purple-400',
-  INSTRUCTION: 'bg-amber-500/10 text-amber-400',
-  CLASSIFICATION: 'bg-green-500/10 text-green-400',
-  SUMMARIZATION: 'bg-cyan-500/10 text-cyan-400',
-  TRANSLATION: 'bg-pink-500/10 text-pink-400',
-  CUSTOM: 'bg-zinc-500/10 text-zinc-400',
+const PROMPT_TYPE_LABELS: Record<string, string> = {
+  COMPLETION: 'completion',
+  CHAT: 'chat',
+  INSTRUCTION: 'instruction',
+  CLASSIFICATION: 'classification',
+  SUMMARIZATION: 'summarization',
+  TRANSLATION: 'translation',
+  CUSTOM: 'custom',
 };
 
 export default function DatasetDetailPage() {
   const router = useRouter();
   const params = useParams();
+  const searchParams = useSearchParams();
   const id = params.id as string;
+  const tab = searchParams.get('tab') === 'settings' ? 'settings' : 'rows';
 
-  const [dataset, setDataset] = useState<Dataset | null>(null);
-  const [rows, setRows] = useState<DatasetRow[]>([]);
-  const [pagination, setPagination] = useState<Pagination | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState(1);
-  const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState('');
-  const [editing, setEditing] = useState(false);
-  const [editName, setEditName] = useState('');
-  const [editDesc, setEditDesc] = useState('');
-  const [editTags, setEditTags] = useState('');
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [actionMsg, setActionMsg] = useState('');
 
-  const fetchDataset = useCallback(async () => {
-    try {
-      const ds = (await api.getDataset(id)) as Dataset;
-      setDataset(ds);
-    } catch (err) {
-      console.error('Failed to fetch dataset', err);
-      router.push('/datasets');
-    }
-  }, [id, router]);
+  const { data: datasetData, isPending: datasetLoading } = useDataset(id);
+  const dataset = datasetData;
+  const isProcessing = dataset?.status === 'PROCESSING';
 
-  const fetchRows = useCallback(async () => {
-    try {
-      const res = (await api.getDatasetRows(id, { page, limit: 50 })) as {
-        data: DatasetRow[];
-        pagination: Pagination;
-      };
-      setRows(res.data);
-      setPagination(res.pagination);
-    } catch (err) {
-      console.error('Failed to fetch rows', err);
-    }
-  }, [id, page]);
+  const { data: rowsData } = useDatasetRows(
+    id,
+    { page: 1, limit: 100 },
+    { refetchInterval: isProcessing ? 3000 : false },
+  );
+  const rows = useMemo(() => rowsData?.data ?? [], [rowsData]);
+  const pagination = useMemo(() => (rowsData?.pagination ?? null) as Pagination | null, [rowsData]);
+
+  const cloneMutation = useCloneDataset(id);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (!api.isAuthenticated) {
       router.replace('/login');
-      return;
     }
-    setLoading(true);
-    Promise.all([fetchDataset(), fetchRows()]).finally(() => setLoading(false));
-  }, [fetchDataset, fetchRows, router]);
+  }, [router]);
 
-  useEffect(() => {
-    fetchRows();
-  }, [page, fetchRows]);
+  const filteredRows = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter(
+      (r) =>
+        r.prompt.toLowerCase().includes(q) ||
+        (r.context ?? '').toLowerCase().includes(q) ||
+        (r.tags ?? []).some((t) => t.toLowerCase().includes(q)),
+    );
+  }, [rows, query]);
 
-  // Poll for processing status
-  useEffect(() => {
-    if (dataset?.status !== 'PROCESSING') return;
-    const interval = setInterval(() => {
-      fetchDataset();
-      fetchRows();
-    }, 3000);
-    return () => clearInterval(interval);
-  }, [dataset?.status, fetchDataset, fetchRows]);
+  const selected = rows.find((r) => r.id === selectedId) ?? filteredRows[0] ?? null;
 
-  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setUploading(true);
-    setUploadError('');
-    try {
-      await api.uploadDatasetFile(id, file);
-      await fetchDataset();
-      await fetchRows();
-    } catch (err) {
-      setUploadError(err instanceof Error ? err.message : 'Upload failed');
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const handleSaveEdit = async () => {
-    try {
-      const updated = (await api.updateDataset(id, {
-        name: editName || undefined,
-        description: editDesc || undefined,
-        tags: editTags
-          ? editTags.split(',').map((t) => t.trim()).filter(Boolean)
-          : undefined,
-      })) as Dataset;
-      setDataset(updated);
-      setEditing(false);
-    } catch (err) {
-      console.error('Failed to update dataset', err);
-    }
-  };
+  const generateMutation = useGenerateDatasetResponses(id);
 
   const handleClone = async () => {
+    setBusy(true);
+    setActionMsg('');
     try {
-      await api.cloneDataset(id);
-      router.push('/datasets');
+      const cloned = (await cloneMutation.mutateAsync()) as Dataset;
+      router.push(`/datasets/${cloned.id}`);
     } catch (err) {
-      console.error('Failed to clone dataset', err);
+      setActionMsg(err instanceof Error ? err.message : 'Failed to clone dataset');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleGenerateResponses = async () => {
+    setBusy(true);
+    setActionMsg('');
+    try {
+      const res = await generateMutation.mutateAsync();
+      setActionMsg(res.message ?? 'AI response generation queued — rows refresh when ready.');
+    } catch (err) {
+      setActionMsg(err instanceof Error ? err.message : 'Failed to start response generation');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleExport = async () => {
+    setBusy(true);
+    setActionMsg('');
+    try {
+      const all: DatasetRow[] = [];
+      let pageNum = 1;
+      let hasMore = true;
+      while (hasMore && pageNum <= 20) {
+        const res = (await api.getDatasetRows(id, { page: pageNum, limit: 100 })) as {
+          data: DatasetRow[];
+          pagination: Pagination;
+        };
+        all.push(...res.data);
+        hasMore = res.pagination.hasNext ?? false;
+        pageNum += 1;
+      }
+      const lines = all.map((r) =>
+        JSON.stringify({
+          rowIndex: r.rowIndex,
+          prompt: r.prompt,
+          promptType: r.promptType,
+          context: r.context ?? undefined,
+          expectedOutput: r.expectedOutput ?? undefined,
+          tags: r.tags ?? [],
+        }),
+      );
+      const blob = new Blob([lines.join('\n')], { type: 'application/json' });
+      const href = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = href;
+      a.download = `${dataset?.name ?? 'dataset'}.jsonl`;
+      a.click();
+      URL.revokeObjectURL(href);
+    } catch (err) {
+      setActionMsg(err instanceof Error ? err.message : 'Export failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (datasetLoading || !dataset) {
+    return (
+      <AppShell>
+        <div className="flex h-[60vh] items-center justify-center">
+          <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-ink-400">Loading…</p>
+        </div>
+      </AppShell>
+    );
+  }
+
+  const actions = (
+    <>
+      <Button variant="ghost" onClick={handleClone} disabled={busy}>
+        <Copy01Icon size={14} />
+        Clone
+      </Button>
+      {dataset.status === 'READY' && (
+        <Button
+          variant="ghost"
+          onClick={handleGenerateResponses}
+          disabled={busy || generateMutation.isPending}
+          title="Run every prompt through the configured AI provider and store the outputs as model responses"
+        >
+          Generate AI responses
+        </Button>
+      )}
+      <Button variant="ghost" onClick={handleExport} disabled={busy}>
+        <Download01Icon size={14} />
+        Export
+      </Button>
+      <Button asChild>
+        <Link href={`/datasets/new?datasetId=${dataset.id}`}>Import new version</Link>
+      </Button>
+    </>
+  );
+
+  return (
+    <AppShell>
+      <DatasetHeader dataset={dataset} activeTab={tab} actions={actions} />
+
+      {actionMsg && (
+        <div className="px-5 pt-4 md:px-9">
+          <p className="rounded-md border border-ink-200 bg-paper px-3.5 py-2.5 font-mono text-[11.5px] text-ink-600">
+            {actionMsg}
+          </p>
+        </div>
+      )}
+
+      <div className="px-5 pb-14 pt-6 md:px-9">
+        {tab === 'settings' ? (
+          <DatasetSettingsForm key={dataset.id} dataset={dataset} onStatus={setActionMsg} />
+        ) : (
+          <div className="grid items-start gap-5 lg:grid-cols-[1.5fr_1fr]">
+            <div className="min-w-0">
+              <div className="mb-3.5 flex items-center justify-between gap-4">
+                <div className="relative max-w-75 flex-1">
+                  <Search01Icon
+                    size={15}
+                    className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-400"
+                  />
+                  <input
+                    type="text"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="Search prompts, tags…"
+                    className="w-full rounded-sm border border-ink-300 bg-white py-2.5 pl-8 pr-3 text-[13px] outline-none transition-colors focus:border-ink"
+                  />
+                </div>
+                <span className="shrink-0 font-mono text-[11.5px] text-ink-500">
+                  {formatNumber(pagination?.total ?? rows.length)} ROWS
+                </span>
+              </div>
+
+              <div className="overflow-hidden rounded-2xl border border-ink-200 bg-white">
+                {filteredRows.length === 0 ? (
+                  <p className="px-6 py-14 text-center font-mono text-[11.5px] text-ink-400">
+                    No rows to show.
+                  </p>
+                ) : (
+                  filteredRows.map((row) => {
+                    const isSelected = row.id === selected?.id;
+                    return (
+                      <button
+                        key={row.id}
+                        type="button"
+                        onClick={() => setSelectedId(row.id)}
+                        className={cn(
+                          'flex w-full items-center gap-3 border-b border-ink-100 px-4.5 py-3.5 text-left transition-colors last:border-b-0',
+                          isSelected ? 'bg-ink text-white' : 'hover:bg-paper',
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            'w-6 shrink-0 font-mono text-[11px]',
+                            isSelected ? 'text-ink-400' : 'text-ink-400',
+                          )}
+                        >
+                          {String(row.rowIndex).padStart(2, '0')}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-[13px] font-medium">
+                            {row.prompt}
+                          </span>
+                          {(row.tags ?? []).length > 0 && (
+                            <span className="mt-1.5 flex gap-1.5">
+                              {row.tags.slice(0, 3).map((t) => (
+                                <span
+                                  key={t}
+                                  className={cn(
+                                    'rounded-full border px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-[0.04em]',
+                                    isSelected
+                                      ? 'border-ink-500 text-ink-300'
+                                      : 'border-ink-300 text-ink-500',
+                                  )}
+                                >
+                                  {t}
+                                </span>
+                              ))}
+                            </span>
+                          )}
+                        </span>
+                        <span
+                          className={cn(
+                            'shrink-0 font-mono text-[10.5px] uppercase',
+                            isSelected ? 'text-ink-400' : 'text-ink-400',
+                          )}
+                        >
+                          {PROMPT_TYPE_LABELS[row.promptType] ?? row.promptType.toLowerCase()}
+                        </span>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+
+              {pagination && pagination.totalPages > 1 && (
+                <p className="mt-3 font-mono text-[11px] text-ink-400">
+                  Showing first {rows.length} of {formatNumber(pagination.total)} rows.
+                </p>
+              )}
+            </div>
+
+            {selected && (
+              <div className="sticky top-24 rounded-2xl border border-ink-200 bg-white p-6">
+                <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.08em] text-ink-400">
+                  Prompt · Row {String(selected.rowIndex).padStart(2, '0')}
+                </p>
+                <p className="mb-5 rounded-md border border-ink-200 bg-paper px-4 py-3.5 text-[13.5px] leading-relaxed text-ink-700">
+                  {selected.prompt}
+                </p>
+
+                {selected.context && (
+                  <div className="mb-5">
+                    <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.08em] text-ink-400">
+                      Context
+                    </p>
+                    <p className="rounded-md border border-ink-200 bg-paper px-4 py-3.5 text-[13.5px] leading-relaxed text-ink-700">
+                      {selected.context}
+                    </p>
+                  </div>
+                )}
+
+                {selected.expectedOutput && (
+                  <div className="mb-5">
+                    <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.08em] text-ink-400">
+                      Expected output
+                    </p>
+                    <p className="rounded-md border border-ink-200 bg-paper px-4 py-3.5 text-[13.5px] leading-relaxed text-ink-700">
+                      {selected.expectedOutput}
+                    </p>
+                  </div>
+                )}
+
+                {(selected.tags ?? []).length > 0 && (
+                  <div className="mb-5">
+                    <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.08em] text-ink-400">
+                      Tags
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {selected.tags.map((t) => (
+                        <span
+                          key={t}
+                          className="rounded-full border border-ink-300 px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.04em] text-ink-500"
+                        >
+                          {t}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="mb-5 grid grid-cols-2 gap-x-4 gap-y-4 text-[12.5px]">
+                  <div>
+                    <p className="text-ink-500">Type</p>
+                    <p className="mt-0.5 font-mono font-semibold text-ink">
+                      {PROMPT_TYPE_LABELS[selected.promptType] ?? selected.promptType.toLowerCase()}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-ink-500">Row</p>
+                    <p className="mt-0.5 font-mono font-semibold text-ink">#{selected.rowIndex}</p>
+                  </div>
+                  <div>
+                    <p className="text-ink-500">Created</p>
+                    <p className="mt-0.5 font-mono font-semibold text-ink">
+                      {formatDate(selected.createdAt)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-ink-500">Tags</p>
+                    <p className="mt-0.5 font-mono font-semibold text-ink">
+                      {(selected.tags ?? []).length}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex gap-2.5 border-t border-ink-100 pt-4">
+                  <Button
+                    variant="ghost"
+                    className="opacity-50"
+                    title="Row editing isn't available yet"
+                    disabled
+                  >
+                    Edit row
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    className="opacity-50"
+                    title="Per-row evaluations aren't available yet"
+                    disabled
+                  >
+                    View evaluations
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {dataset.status === 'PROCESSING' && (
+          <div className="mt-4 flex items-center gap-2 rounded-md border border-ink-200 bg-paper px-3.5 py-2.5 font-mono text-[11.5px] text-ink-500">
+            <span className="h-2 w-2 animate-pulse rounded-full bg-ink" />
+            Processing — rows and AI responses refresh automatically.
+          </div>
+        )}
+      </div>
+    </AppShell>
+  );
+}
+
+function DatasetSettingsForm({
+  dataset,
+  onStatus,
+}: {
+  dataset: Dataset;
+  onStatus: (msg: string) => void;
+}) {
+  const router = useRouter();
+  const [editName, setEditName] = useState(dataset.name);
+  const [editDesc, setEditDesc] = useState(dataset.description ?? '');
+  const [editTags, setEditTags] = useState(dataset.tags.join(', '));
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const updateMutation = useUpdateDataset(dataset.id);
+  const archiveMutation = useArchiveDataset(dataset.id);
+  const deleteMutation = useDeleteDataset(dataset.id);
+
+  const handleSave = async () => {
+    onStatus('');
+    try {
+      await updateMutation.mutateAsync({
+        name: editName.trim() || undefined,
+        description: editDesc.trim() || undefined,
+        tags: editTags
+          .split(',')
+          .map((t) => t.trim())
+          .filter(Boolean),
+      });
+    } catch (err) {
+      onStatus(err instanceof Error ? err.message : 'Failed to save settings');
     }
   };
 
   const handleArchive = async () => {
-    if (!confirm('Archive this dataset?')) return;
+    if (!confirm(`Archive ${dataset.name}?`)) return;
+    onStatus('');
     try {
-      await api.archiveDataset(id);
-      fetchDataset();
+      await archiveMutation.mutateAsync();
     } catch (err) {
-      console.error('Failed to archive dataset', err);
+      onStatus(err instanceof Error ? err.message : 'Failed to archive dataset');
     }
   };
 
   const handleDelete = async () => {
-    if (!confirm('Permanently delete this dataset? This cannot be undone.')) return;
+    setConfirmDelete(false);
     try {
-      await api.deleteDataset(id);
+      await deleteMutation.mutateAsync();
       router.push('/datasets');
     } catch (err) {
-      console.error('Failed to delete dataset', err);
+      onStatus(err instanceof Error ? err.message : 'Failed to delete dataset');
     }
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
-        <p className="text-zinc-400">Loading...</p>
-      </div>
-    );
-  }
-
-  if (!dataset) return null;
-
   return (
-    <div className="min-h-screen bg-zinc-950 text-white">
-      {/* Header */}
-      <header className="border-b border-zinc-800 px-6 py-4">
-        <div className="max-w-6xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-4 min-w-0">
-            <button onClick={() => router.push('/datasets')} className="text-zinc-400 hover:text-white text-sm shrink-0">
-              ← Datasets
-            </button>
-            <div className="min-w-0">
-              {editing ? (
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={editName}
-                    onChange={(e) => setEditName(e.target.value)}
-                    className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-sm w-64 focus:outline-none focus:border-zinc-500"
-                  />
-                  <button onClick={handleSaveEdit} className="text-emerald-400 text-sm hover:text-emerald-300">Save</button>
-                  <button onClick={() => setEditing(false)} className="text-zinc-400 text-sm hover:text-white">Cancel</button>
-                </div>
-              ) : (
-                <h1 className="text-lg font-bold truncate">{dataset.name}</h1>
-              )}
-            </div>
-            <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium shrink-0 ${STATUS_COLORS[dataset.status] || STATUS_COLORS.PENDING}`}>
-              {dataset.status}
-            </span>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <label className={`rounded-lg px-3 py-2 text-sm font-medium cursor-pointer transition-colors ${uploading ? 'bg-zinc-700 text-zinc-300' : 'bg-white text-black hover:bg-zinc-200'}`}>
-              {uploading ? 'Uploading...' : 'Upload File'}
-              <input type="file" accept=".csv,.json,.jsonl" onChange={handleUpload} className="hidden" disabled={uploading} />
-            </label>
-            <button
-              onClick={() => {
-                setEditName(dataset.name);
-                setEditDesc(dataset.description || '');
-                setEditTags(dataset.tags.join(', '));
-                setEditing(true);
-              }}
-              className="rounded-lg border border-zinc-800 px-3 py-2 text-sm hover:bg-zinc-900 transition-colors"
-            >
-              Edit
-            </button>
-            <button onClick={handleClone} className="rounded-lg border border-zinc-800 px-3 py-2 text-sm hover:bg-zinc-900 transition-colors">
-              Clone
-            </button>
-            <button onClick={handleArchive} className="rounded-lg border border-zinc-800 px-3 py-2 text-sm hover:bg-zinc-900 transition-colors">
-              Archive
-            </button>
-            <button onClick={handleDelete} className="rounded-lg border border-red-900/50 px-3 py-2 text-sm text-red-400 hover:bg-red-950/30 transition-colors">
-              Delete
-            </button>
-          </div>
-        </div>
-      </header>
-
-      <main className="max-w-6xl mx-auto px-6 py-6">
-        {uploadError && (
-          <div className="mb-4 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
-            {uploadError}
-          </div>
-        )}
-
-        {/* Edit form */}
-        {editing && (
-          <div className="mb-6 rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 space-y-3">
+    <>
+      <div className="max-w-160 space-y-5">
+        <div className="rounded-2xl border border-ink-200 bg-white p-6">
+          <h3 className="mb-1 text-[15px]">Dataset settings</h3>
+          <p className="mb-5 text-[12.5px] text-ink-500">
+            Rename the dataset, update its description, and manage tags.
+          </p>
+          <div className="space-y-4">
             <div>
-              <label className="text-xs text-zinc-500 block mb-1">Description</label>
+              <label className="mb-1.5 block text-[12.5px] font-semibold text-ink-700">
+                Name
+              </label>
               <input
                 type="text"
-                value={editDesc}
-                onChange={(e) => setEditDesc(e.target.value)}
-                placeholder="Description..."
-                className="w-full rounded border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm focus:outline-none focus:border-zinc-500"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                className="w-full rounded-sm border border-ink-300 px-3 py-2.5 text-[14px] outline-none transition-colors focus:border-ink"
               />
             </div>
             <div>
-              <label className="text-xs text-zinc-500 block mb-1">Tags (comma-separated)</label>
+              <label className="mb-1.5 block text-[12.5px] font-semibold text-ink-700">
+                Description
+              </label>
+              <textarea
+                rows={3}
+                value={editDesc}
+                onChange={(e) => setEditDesc(e.target.value)}
+                className="w-full resize-y rounded-sm border border-ink-300 px-3 py-2.5 text-[14px] outline-none transition-colors focus:border-ink"
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-[12.5px] font-semibold text-ink-700">
+                Tags <span className="font-normal text-ink-400">(comma-separated)</span>
+              </label>
               <input
                 type="text"
                 value={editTags}
                 onChange={(e) => setEditTags(e.target.value)}
-                placeholder="qa, support"
-                className="w-full rounded border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm focus:outline-none focus:border-zinc-500"
+                placeholder="qa, support, v1"
+                className="w-full rounded-sm border border-ink-300 px-3 py-2.5 text-[14px] outline-none transition-colors focus:border-ink"
               />
             </div>
-          </div>
-        )}
-
-        {/* Info bar */}
-        <div className="flex items-center gap-6 text-sm text-zinc-500 mb-6">
-          <span>Format: <span className="text-zinc-300">{dataset.format}</span></span>
-          <span>Version: <span className="text-zinc-300">v{dataset.version}</span></span>
-          <span>Rows: <span className="text-zinc-300">{dataset.rowCount.toLocaleString()}</span></span>
-          {dataset.description && <span className="text-zinc-400 truncate max-w-md">{dataset.description}</span>}
-          {dataset.tags.length > 0 && (
-            <div className="flex gap-1">
-              {dataset.tags.map((t) => (
-                <span key={t} className="rounded-full bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400">{t}</span>
-              ))}
+            <div className="flex justify-end">
+              <Button onClick={handleSave} disabled={updateMutation.isPending}>
+                {updateMutation.isPending ? 'Saving…' : 'Save changes'}
+              </Button>
             </div>
-          )}
+          </div>
         </div>
 
-        {/* Processing state */}
-        {dataset.status === 'PROCESSING' && (
-          <div className="mb-6 rounded-lg border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-400 flex items-center gap-2">
-            <div className="size-2 rounded-full bg-amber-400 animate-pulse" />
-            Processing uploaded file... (auto-refreshes)
+        <div className="rounded-2xl border border-ink-200 bg-white p-6">
+          <h3 className="mb-1 text-[15px]">Danger zone</h3>
+          <p className="mb-5 text-[12.5px] text-ink-500">
+            Archive keeps the dataset for reference; deletion removes it permanently.
+          </p>
+          <div className="flex gap-2.5">
+            <Button variant="ghost" onClick={handleArchive}>
+              Archive dataset
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => setConfirmDelete(true)}
+              className="border-red-900/40 text-red-700 hover:border-red-700 hover:bg-red-50 hover:text-red-700"
+            >
+              Delete dataset
+            </Button>
           </div>
-        )}
+        </div>
+      </div>
 
-        {/* Pending state */}
-        {dataset.status === 'PENDING' && (
-          <div className="mb-6 rounded-lg border border-zinc-700 bg-zinc-900/50 px-4 py-3 text-sm text-zinc-400">
-            This dataset is waiting for a file upload. Upload a {dataset.format} file to populate it.
-          </div>
-        )}
-
-        {/* Failed state */}
-        {dataset.status === 'FAILED' && (
-          <div className="mb-6 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
-            Processing failed. Try uploading the file again.
-          </div>
-        )}
-
-        {/* Row browser */}
-        {rows.length > 0 && (
+      <ConfirmDialog
+        open={confirmDelete}
+        title="Delete dataset?"
+        description={
           <>
-            <h2 className="text-sm font-medium text-zinc-400 mb-3">
-              Rows ({pagination?.total.toLocaleString() || rows.length} total)
-            </h2>
-            <div className="space-y-1.5">
-              {rows.map((row) => (
-                <div
-                  key={row.id}
-                  className="rounded-lg border border-zinc-800 bg-zinc-900/30 p-3 hover:bg-zinc-900/60 transition-colors"
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs text-zinc-600">#{row.rowIndex}</span>
-                    <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${PROMPT_TYPE_COLORS[row.promptType] || PROMPT_TYPE_COLORS.CUSTOM}`}>
-                      {row.promptType}
-                    </span>
-                  </div>
-                  <p className="text-sm text-zinc-300 line-clamp-2">{row.prompt}</p>
-                  {row.context && (
-                    <p className="text-xs text-zinc-500 mt-1 line-clamp-1">Context: {row.context}</p>
-                  )}
-                  {row.expectedOutput && (
-                    <p className="text-xs text-zinc-500 mt-1 line-clamp-1">Expected: {row.expectedOutput}</p>
-                  )}
-                  {row.tags.length > 0 && (
-                    <div className="flex gap-1 mt-1.5">
-                      {row.tags.map((t) => (
-                        <span key={t} className="rounded bg-zinc-800 px-1.5 py-0.5 text-xs text-zinc-500">{t}</span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-
-            {/* Pagination */}
-            {pagination && pagination.totalPages > 1 && (
-              <div className="flex items-center justify-between mt-4 text-sm">
-                <span className="text-zinc-500">
-                  Page {pagination.page} of {pagination.totalPages}
-                </span>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setPage(pagination.page - 1)}
-                    disabled={!pagination.hasPrev}
-                    className="rounded border border-zinc-800 px-3 py-1 disabled:opacity-30 disabled:cursor-not-allowed hover:border-zinc-700"
-                  >
-                    Previous
-                  </button>
-                  <button
-                    onClick={() => setPage(pagination.page + 1)}
-                    disabled={!pagination.hasNext}
-                    className="rounded border border-zinc-800 px-3 py-1 disabled:opacity-30 disabled:cursor-not-allowed hover:border-zinc-700"
-                  >
-                    Next
-                  </button>
-                </div>
-              </div>
-            )}
+            <span className="font-semibold text-ink">{dataset.name}</span> will be permanently
+            deleted, along with all {formatNumber(dataset.rowCount)} rows and versions
+            {dataset._count?.tasks
+              ? `, plus ${formatNumber(dataset._count.tasks)} evaluation ${
+                  dataset._count.tasks === 1 ? 'task' : 'tasks'
+                } built on it`
+              : ''}
+            . This cannot be undone.
           </>
-        )}
-      </main>
-    </div>
+        }
+        confirmLabel="Delete dataset"
+        destructive
+        confirmBusy={deleteMutation.isPending}
+        onConfirm={handleDelete}
+        onClose={() => setConfirmDelete(false)}
+      />
+    </>
   );
 }

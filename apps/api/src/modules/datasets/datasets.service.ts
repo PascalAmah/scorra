@@ -9,12 +9,26 @@ import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StorageService } from '../../common/services/storage.service';
+import { AiService } from '../ai/ai.service';
 import { CreateDatasetDto } from './dto/create-dataset.dto';
 import { CreatePromptDto } from './dto/create-prompt.dto';
 import { UpdateDatasetDto } from './dto/update-dataset.dto';
 import { PaginationDto, buildPaginationMeta } from '../../common/dto/pagination.dto';
-import { QueueName, DatasetProcessingJobData } from '@scorra/types';
+import {
+  QueueName,
+  DatasetProcessingJobData,
+  DatasetVersionDiff,
+  ModelInferenceJobData,
+  PromptType,
+} from '@scorra/types';
 import { Prisma } from '@prisma/client';
+import {
+  parseDatasetRows,
+  rowExpectedOutput,
+  rowPrompt,
+  rowPromptType,
+  type ParsedRow,
+} from './dataset-parser';
 
 @Injectable()
 export class DatasetsService {
@@ -23,8 +37,11 @@ export class DatasetsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
+    private readonly aiService: AiService,
     @InjectQueue(QueueName.DATASET_PROCESSING)
     private readonly datasetQueue: Queue,
+    @InjectQueue(QueueName.MODEL_INFERENCE)
+    private readonly modelInferenceQueue: Queue,
   ) {}
 
   async create(organizationId: string, userId: string, dto: CreateDatasetDto) {
@@ -143,6 +160,22 @@ export class DatasetsService {
     };
   }
 
+  /** Fetch a single dataset row with its model responses (for detail views). */
+  async getRow(datasetId: string, rowId: string, organizationId: string) {
+    await this.findOneOrThrow(datasetId, organizationId);
+
+    const row = await this.prisma.datasetRow.findFirst({
+      where: { id: rowId, datasetId },
+      include: { modelResponses: { orderBy: { createdAt: 'asc' } } },
+    });
+
+    if (!row) {
+      throw new NotFoundException(`Row ${rowId} not found in dataset ${datasetId}`);
+    }
+
+    return row;
+  }
+
   async createPrompt(organizationId: string, userId: string, dto: CreatePromptDto) {
     await this.findOneOrThrow(dto.datasetId, organizationId);
 
@@ -175,6 +208,53 @@ export class DatasetsService {
     return row;
   }
 
+  /**
+   * Queue generation of an AI response for every row that lacks one, using the
+   * organization's configured AI provider. Rows that already have a response
+   * (e.g. from an uploaded `response` column) are left untouched.
+   */
+  async generateResponses(id: string, organizationId: string, userId: string) {
+    const dataset = await this.findOneOrThrow(id, organizationId);
+
+    if (dataset.status !== 'READY' && dataset.status !== 'PROCESSING') {
+      throw new BadRequestException('Dataset must be READY to generate responses');
+    }
+
+    if (!this.aiService.isGenerationConfigured()) {
+      throw new BadRequestException(
+        'No AI provider configured — set AI_PROVIDER and a matching API key in apps/api/.env',
+      );
+    }
+
+    const pending = await this.prisma.datasetRow.count({
+      where: { datasetId: id, modelResponses: { none: {} } },
+    });
+    if (pending === 0) {
+      throw new BadRequestException('Every row already has a model response');
+    }
+
+    const info = this.aiService.getGenerationInfo();
+
+    const jobData: ModelInferenceJobData = {
+      datasetId: id,
+      organizationId,
+      requestedById: userId,
+    };
+    await this.modelInferenceQueue.add('generate-responses', jobData, {
+      attempts: 2,
+      backoff: { type: 'exponential', delay: 5000 },
+    });
+
+    this.logger.log(`Response generation queued for dataset ${id} (${pending} rows)`);
+    return {
+      message: `Queued AI response generation for ${pending} rows via ${info.provider} / ${info.modelId}`,
+      datasetId: id,
+      pending,
+      provider: info.provider,
+      model: info.modelId,
+    };
+  }
+
   async archive(id: string, organizationId: string) {
     await this.findOneOrThrow(id, organizationId);
     return this.prisma.dataset.update({
@@ -198,6 +278,11 @@ export class DatasetsService {
         this.logger.warn(`Failed to delete file for dataset ${id}`);
       }
     }
+
+    // Evaluation tasks reference the dataset with no cascade, so remove them
+    // first (their evaluations, comparisons, rankings and assignments cascade
+    // with the task; exports keep their taskId nulled).
+    await this.prisma.evaluationTask.deleteMany({ where: { datasetId: id } });
 
     await this.prisma.dataset.delete({ where: { id } });
     return { message: 'Dataset deleted' };
@@ -315,7 +400,7 @@ export class DatasetsService {
     return version;
   }
 
-  async getVersions(datasetId: string, organizationId: string) {
+async getVersions(datasetId: string, organizationId: string) {
     await this.findOneOrThrow(datasetId, organizationId);
 
     return this.prisma.datasetVersion.findMany({
@@ -324,9 +409,95 @@ export class DatasetsService {
     });
   }
 
+  async getVersionDiff(
+    datasetId: string,
+    organizationId: string,
+    baseVersion: number,
+    currentVersion: number,
+  ): Promise<DatasetVersionDiff> {
+    await this.findOneOrThrow(datasetId, organizationId);
+
+    const [base, current] = await Promise.all([
+      this.prisma.datasetVersion.findFirst({ where: { datasetId, version: baseVersion } }),
+      this.prisma.datasetVersion.findFirst({ where: { datasetId, version: currentVersion } }),
+    ]);
+
+    if (!base || !current) {
+      throw new NotFoundException('One or both versions not found');
+    }
+
+    const [baseBuffer, currentBuffer] = await Promise.all([
+      this.storage.download(base.fileUrl),
+      this.storage.download(current.fileUrl),
+    ]);
+
+    const baseRows = parseDatasetRows(baseBuffer);
+    const currentRows = parseDatasetRows(currentBuffer);
+
+    const keyOf = (row: ParsedRow, index: number) => (row.rowIndex ?? index);
+
+    const baseByKey = new Map(baseRows.map((row, index) => [keyOf(row, index), row]));
+    const currentByKey = new Map(currentRows.map((row, index) => [keyOf(row, index), row]));
+
+    const changed = (b: ParsedRow, c: ParsedRow) =>
+      rowPrompt(b) !== rowPrompt(c) ||
+      String(b.context ?? '') !== String(c.context ?? '') ||
+      (rowExpectedOutput(b) ?? '') !== (rowExpectedOutput(c) ?? '');
+
+    const keys = Array.from(new Set([...baseByKey.keys(), ...currentByKey.keys()])).sort(
+      (a, b) => a - b,
+    );
+
+    const rows: DatasetVersionDiff['rows'] = [];
+    let addedCount = 0;
+    let removedCount = 0;
+    let modifiedCount = 0;
+
+    for (const key of keys) {
+      const baseRow = baseByKey.get(key);
+      const currentRow = currentByKey.get(key);
+
+      if (baseRow && !currentRow) {
+        removedCount += 1;
+        rows.push({
+          rowIndex: key,
+          prompt: rowPrompt(baseRow),
+          promptType: rowPromptType(baseRow.type) as unknown as PromptType,
+          status: 'REMOVED',
+        });
+      } else if (!baseRow && currentRow) {
+        addedCount += 1;
+        rows.push({
+          rowIndex: key,
+          prompt: rowPrompt(currentRow),
+          promptType: rowPromptType(currentRow.type) as unknown as PromptType,
+          status: 'ADDED',
+        });
+      } else if (baseRow && currentRow && changed(baseRow, currentRow)) {
+        modifiedCount += 1;
+        rows.push({
+          rowIndex: key,
+          prompt: rowPrompt(currentRow),
+          promptType: rowPromptType(currentRow.type) as unknown as PromptType,
+          status: 'MODIFIED',
+        });
+      }
+    }
+
+    return {
+      baseVersion,
+      currentVersion,
+      addedCount,
+      removedCount,
+      modifiedCount,
+      rows,
+    };
+  }
+
   private async findOneOrThrow(id: string, organizationId: string) {
     const dataset = await this.prisma.dataset.findFirst({
       where: { id, organizationId },
+      include: { _count: { select: { rows: true, tasks: true } } },
     });
 
     if (!dataset) {
