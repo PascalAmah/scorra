@@ -13,6 +13,11 @@ import { api } from '@/lib/api';
 import { formatNumber } from '@/lib/utils';
 import { isOrgAdmin } from '@/lib/permissions';
 
+function windowLocationOrigin(): string {
+  if (typeof window === 'undefined') return '';
+  return window.location.origin;
+}
+
 const TIMEZONES = [
   'UTC-08:00 · Pacific Time',
   'UTC-05:00 · Eastern Time',
@@ -217,7 +222,7 @@ function OrgProfileCard({
           </span>
           <div className="flex h-11 items-center overflow-hidden rounded-sm border border-ink-300">
             <span className="flex items-center self-stretch border-r border-ink-300 bg-paper px-3 font-mono text-[13px] text-ink-500">
-              scorra.app/org/
+              {windowLocationOrigin}/org/
             </span>
             <input
               value={slug}
