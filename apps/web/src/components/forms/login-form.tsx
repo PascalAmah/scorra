@@ -3,6 +3,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { motion } from 'motion/react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 
@@ -83,12 +84,12 @@ export function LoginForm() {
           htmlFor="password"
           error={errors.password?.message}
           action={
-            <a
-              href="#"
+            <Link
+              href="/forgot-password"
               className="text-xs font-medium text-ink-500 transition-colors hover:text-ink"
             >
               Forgot password?
-            </a>
+            </Link>
           }
         >
           <PasswordInput

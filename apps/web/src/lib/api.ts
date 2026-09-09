@@ -157,6 +157,20 @@ export const api = {
     useAuthStore.getState().clearSession();
   },
 
+  async forgotPassword(email: string) {
+    return request<{ message: string }>('/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  },
+
+  async resetPassword(token: string, newPassword: string) {
+    return request<{ message: string }>('/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ token, newPassword }),
+    });
+  },
+
   // ── Organizations ─────────────────────────────────
   async getOrganizations() {
     return request<Organization[]>('/organizations');
