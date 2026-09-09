@@ -16,6 +16,7 @@ import { StatCard } from '@/components/dashboard/stat-card';
 import { Panel } from '@/components/dashboard/panel';
 import { Badge } from '@/components/ui/badge';
 import { useDashboardSummary } from '@/hooks/use-dashboard';
+import { useOrganizations } from '@/hooks/use-organization';
 import { useTasks } from '@/hooks/use-tasks';
 import { api } from '@/lib/api';
 import { formatNumber, formatRelativeTime } from '@/lib/utils';
@@ -26,6 +27,10 @@ const MAX_BAR = 10;
 export default function AnalyticsPage() {
   const router = useRouter();
   const { data: summary, isPending } = useDashboardSummary();
+  const { data: orgsData } = useOrganizations();
+  const org = orgsData?.[0] ?? null;
+  const orgName = org?.name ?? null;
+
   const { data: tasksData } = useTasks({ page: 1, limit: 100 });
   const tasks = useMemo(() => tasksData?.data ?? [], [tasksData]);
 
@@ -91,7 +96,7 @@ export default function AnalyticsPage() {
     <AppShell>
       <Topbar
         title="Analytics"
-        sub="NORTHBEAM AI · LIVE"
+        sub={`${orgName ?? 'Organization'} · LIVE`}
         actions={
           <select
             value={selectedTask}

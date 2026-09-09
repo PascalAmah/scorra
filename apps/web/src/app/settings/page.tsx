@@ -222,7 +222,7 @@ function OrgProfileCard({
           </span>
           <div className="flex h-11 items-center overflow-hidden rounded-sm border border-ink-300">
             <span className="flex items-center self-stretch border-r border-ink-300 bg-paper px-3 font-mono text-[13px] text-ink-500">
-              {windowLocationOrigin}/org/
+              {windowLocationOrigin()}/org/
             </span>
             <input
               value={slug}
