@@ -17,6 +17,11 @@ services:
         value: 3001
 
       # ── Database ─────────────────────────────────────────────────────────
+      # Use the Session pooler (Supavisor) connection string from Supabase
+      # (Project Settings → Database → Connection string → Session pooler).
+      # The direct `db.<ref>.supabase.co` endpoint is IPv6-only and cannot
+      # be reached from Render. Format:
+      #   postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres
       - key: DATABASE_URL
         sync: false   # set manually in Render dashboard
 

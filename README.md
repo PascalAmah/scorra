@@ -191,7 +191,7 @@ This runs both the API and web apps:
 
 | Variable                          | Description                                              | Default                   |
 | --------------------------------- | -------------------------------------------------------- | ------------------------- |
-| `DATABASE_URL`                    | Postgres connection string                               | —                         |
+| `DATABASE_URL`                    | Postgres connection string (Supabase: use the **Session pooler** string — the direct `db.<ref>.supabase.co` endpoint is IPv6-only) | —                         |
 | `PORT`                            | API port                                                 | `3001`                    |
 | `API_PREFIX`                      | API route prefix                                         | `api/v1`                  |
 | `FRONTEND_URL`                    | Frontend URL (CORS allowlist)                            | `http://localhost:3000`   |
@@ -440,7 +440,7 @@ A `render.yaml` blueprint is included at the repo root. Render will detect it au
 1. Go to Render → **New** → **Blueprint** → connect `PascalAmah/scorra`, branch `main`
 2. Render creates the `scorra-api` service (Docker runtime, `apps/api/Dockerfile`)
 3. Fill in the secret env vars marked `sync: false` in `render.yaml`:
-   - `DATABASE_URL` — Supabase → Project Settings → Database → connection string
+   - `DATABASE_URL` — Supabase → Project Settings → Database → Connection string → **Session pooler** (the direct connection is IPv6-only and unreachable from Render): `postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres`
    - `REDIS_URL` — Upstash → your Redis instance → connection URL
    - `FRONTEND_URL` — your Vercel URL (set after web deploy)
    - `SUPABASE_URL` and `SUPABASE_SECRET_KEY` — Supabase → Project Settings → API
