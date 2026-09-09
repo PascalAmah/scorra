@@ -69,7 +69,9 @@ COPY --from=builder /app/apps/api/prisma ./apps/api/prisma
 
 # Copy package manifests (needed by Node module resolution)
 COPY --from=builder /app/apps/api/package.json ./apps/api/package.json
-COPY --from=builder /app/packages/types/package.json ./packages/types/package.json
+# Copy the whole types package (source + built dist/) — the API imports
+# @scorra/types at runtime via its `dist/index.js` main entry.
+COPY --from=builder /app/packages/types ./packages/types
 COPY --from=builder /app/package.json ./package.json
 
 # Generate Prisma client against the production binary
