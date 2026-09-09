@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 import { SettingsShell } from '@/components/dashboard/settings-shell';
 import { Button } from '@/components/ui/button';
