@@ -60,7 +60,7 @@ export function ForgotPasswordForm() {
         <p className="text-[13.5px] font-semibold text-ink">Check your inbox</p>
         <p className="mt-1.5 text-[13px] leading-relaxed text-ink-500">
           If an account exists for <b className="text-ink">{sentTo}</b>, we&rsquo;ve
-          sent a link to reset your password. The link expires in 60 minutes.
+          sent a link to reset your password. The link expires in 10 minutes.
         </p>
         <p className="mt-3 text-[12.5px] text-ink-500">
           Didn&rsquo;t get it? Check your spam folder or{' '}

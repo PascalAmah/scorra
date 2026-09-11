@@ -149,12 +149,20 @@ async function request<T>(path: string, options: RequestInit = {}, _retry = true
 
   if (!res.ok) {
     const errBody = body as Record<string, unknown> | string;
-    const message =
-      typeof errBody === 'object' && errBody !== null
-        ? (errBody as Record<string, unknown>).error?.message || (errBody as Record<string, unknown>).message || `Request failed: ${res.status}`
-        : typeof errBody === 'string'
-          ? errBody
-          : `Request failed: ${res.status}`;
+    let message: string;
+    if (typeof errBody === 'object' && errBody !== null) {
+      const obj = errBody as Record<string, unknown>;
+      message =
+        (obj.error && typeof obj.error === 'object' && 'message' in obj.error
+          ? String((obj.error as Record<string, unknown>).message)
+          : undefined) ||
+        (typeof obj.message === 'string' ? obj.message : undefined) ||
+        `Request failed: ${res.status}`;
+    } else if (typeof errBody === 'string') {
+      message = errBody;
+    } else {
+      message = `Request failed: ${res.status}`;
+    }
     throw new Error(message);
   }
 

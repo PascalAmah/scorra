@@ -88,7 +88,7 @@ export class AuthService {
       to: user.email,
       firstName: user.name.split(' ')[0] ?? user.name,
     };
-    await this.emailQueue
+    this.emailQueue
       .add('send-welcome', welcomeJobData, {
         attempts: 3,
         backoff: { type: 'exponential', delay: 5000 },
@@ -139,7 +139,7 @@ export class AuthService {
       resetToken: resetToken.token,
       expiryMinutes: this.RESET_TOKEN_MINUTES,
     };
-    await this.emailQueue
+    this.emailQueue
       .add('send-reset-password', jobData, {
         attempts: 3,
         backoff: { type: 'exponential', delay: 5000 },

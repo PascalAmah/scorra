@@ -19,7 +19,7 @@ export function renderResetPasswordEmail(data: ResetPasswordEmailData): {
   const text = [
     `Hi ${firstName},`,
     ``,
-    `We received a request to reset the password on your Scorra account (${email}). Click below to choose a new one. This link expires in ${expiryMinutes} minutes.`,
+    `We received a request to reset the password on your Scorra account (${email}). Click below to choose a new one. This link expires in ${expiryMinutes} minute${expiryMinutes !== 1 ? 's' : ''}.`,
     ``,
     `Reset your password:`,
     `${resetUrl}`,
@@ -30,7 +30,7 @@ export function renderResetPasswordEmail(data: ResetPasswordEmailData): {
   ].join('\n');
 
   const html = layout({
-    preheader: `Reset your password. This link expires in ${expiryMinutes} minutes.`,
+    preheader: `Reset your password. This link expires in ${expiryMinutes} minute${expiryMinutes !== 1 ? 's' : ''}.`,
     eyebrow: 'SECURITY',
     title: 'Reset your password',
     bodyHtml: `
