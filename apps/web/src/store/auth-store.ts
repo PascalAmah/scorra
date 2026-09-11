@@ -8,6 +8,7 @@ interface AuthState {
   user: AuthResponse['user'] | null;
   setSession: (session: AuthResponse) => void;
   clearSession: () => void;
+  rehydrated: boolean;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -16,6 +17,7 @@ export const useAuthStore = create<AuthState>()(
       accessToken: null,
       refreshToken: null,
       user: null,
+      rehydrated: false,
       setSession: (session) =>
         set({
           accessToken: session.accessToken,
@@ -32,6 +34,9 @@ export const useAuthStore = create<AuthState>()(
         refreshToken: state.refreshToken,
         user: state.user,
       }),
+      onRehydrateStorage: () => () => {
+        useAuthStore.getState().rehydrated = true;
+      },
     },
   ),
 );

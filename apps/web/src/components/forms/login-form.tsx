@@ -25,6 +25,7 @@ import { loginSchema, type LoginValues } from '@/validations/auth';
 export function LoginForm() {
   const router = useRouter();
   const [serverError, setServerError] = useState<string | null>(null);
+  const [slowRequest, setSlowRequest] = useState(false);
 
   const {
     register,
@@ -37,13 +38,20 @@ export function LoginForm() {
 
   const onSubmit = async (values: LoginValues) => {
     setServerError(null);
+    setSlowRequest(false);
+    // Render free-tier cold starts can take 30s+ — surface a hint so the
+    // spinner doesn't look like a hang.
+    const slowTimer = setTimeout(() => setSlowRequest(true), 8000);
     try {
-      const session = await signIn(values);
+      await signIn(values);
       router.push('/dashboard');
     } catch (error) {
       setServerError(
         error instanceof Error ? error.message : 'Unable to log in. Please try again.',
       );
+    } finally {
+      clearTimeout(slowTimer);
+      setSlowRequest(false);
     }
   };
 
@@ -114,6 +122,12 @@ export function LoginForm() {
 
       <motion.div variants={fadeUpItem}>
         <SubmitButton loading={isSubmitting}>Log in</SubmitButton>
+        {slowRequest && isSubmitting && (
+          <p className="mt-3 text-center text-[12px] text-ink-500" role="status">
+            Still connecting… the server may be waking up. This can take up to a
+            minute on the free tier.
+          </p>
+        )}
       </motion.div>
 
       {/* <motion.div variants={fadeUpItem}>

@@ -67,24 +67,31 @@ export function InviteModal({ open, onClose }: InviteModalProps) {
     setSending(true);
     setError('');
 
-    const results: Array<{ email: string; link: string; copied: boolean }> = [];
-    let failed = 0;
-    for (const email of emails) {
-      try {
-        const invitation = await inviteMutation.mutateAsync({ email, role });
-        const link = `${window.location.origin}/accept-invitation?token=${invitation.token}`;
-        results.push({ email, link, copied: false });
-      } catch {
-        failed++;
+    try {
+      const results: Array<{ email: string; link: string; copied: boolean }> = [];
+      let failed = 0;
+      for (const email of emails) {
+        try {
+          const invitation = await inviteMutation.mutateAsync({ email, role });
+          const link = `${window.location.origin}/accept-invitation?token=${invitation.token}`;
+          results.push({ email, link, copied: false });
+        } catch (err) {
+          failed++;
+          console.error(`Failed to invite ${email}:`, err);
+        }
       }
-    }
 
-    setSending(false);
-    if (results.length > 0) {
-      setEmails([]);
-      setSentLinks(results);
-    } else {
-      setError(`${failed} invitation${failed > 1 ? 's' : ''} failed to send`);
+      if (results.length > 0) {
+        setEmails([]);
+        setSentLinks(results);
+      } else {
+        setError(`${failed} invitation${failed > 1 ? 's' : ''} failed to send`);
+      }
+    } catch (err) {
+      console.error('Unexpected error in handleSend:', err);
+      setError('An unexpected error occurred');
+    } finally {
+      setSending(false);
     }
   };
 
@@ -287,11 +294,11 @@ export function InviteModal({ open, onClose }: InviteModalProps) {
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-[12.5px] font-medium">{inv.email}</p>
                     <p className="font-mono text-[10.5px] text-ink-400">
-                      Sent {formatRelativeTime(inv.createdAt)}
+                      Invited by admin · Sent {formatRelativeTime(inv.createdAt)}
                     </p>
                   </div>
                   <span className="ml-auto shrink-0 rounded-full border border-ink-300 px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-[0.05em] text-ink-500">
-                    {inv.role === 'ORG_ADMIN' ? 'Admin' : 'Evaluator'}
+                    {inv.role === 'ORG_ADMIN' ? 'To: Admin' : 'To: Evaluator'}
                   </span>
                 </div>
               ))}

@@ -5,7 +5,11 @@ export interface WelcomeEmailData {
   workspaceUrl: string;
 }
 
-export function renderWelcomeEmail(data: WelcomeEmailData): { subject: string; text: string; html: string } {
+export function renderWelcomeEmail(data: WelcomeEmailData): {
+  subject: string;
+  text: string;
+  html: string;
+} {
   const { firstName, workspaceUrl } = data;
 
   const subject = 'Welcome to Scorra';
@@ -60,7 +64,7 @@ export function renderWelcomeEmail(data: WelcomeEmailData): { subject: string; t
                   </td>
                 </tr>
               </table>`,
-    footerNote: `Need a hand getting started? Reply to this email or reach us at <a href="mailto:support@scorra.ai" style="color:#5C5C5C;text-decoration:underline;">support@scorra.ai</a>.`,
+    footerNote: `Need a hand getting started? Reply to this email or reach us at <a href="mailto:pascalamaliri@gmail.com" style="color:#5C5C5C;text-decoration:underline;">support@scorra.ai</a>.`,
   });
 
   return { subject, text, html };

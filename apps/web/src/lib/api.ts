@@ -62,9 +62,15 @@ async function refreshAccessToken(): Promise<string | null> {
       }
 
       const data = await res.json();
-      // The refresh endpoint returns { accessToken, refreshToken } (and
-      // optionally the full AuthResponse shape). Persist whatever we get.
-      setSession(data);
+      // The refresh endpoint returns { accessToken, refreshToken } without a
+      // user — merge over the existing session so `user` is not clobbered with
+      // undefined (which would log the user out on the next page load).
+      const prev = useAuthStore.getState();
+      setSession({
+        accessToken: data.accessToken,
+        refreshToken: data.refreshToken,
+        user: data.user ?? prev.user,
+      });
       return data.accessToken as string;
     } catch {
       useAuthStore.getState().clearSession();
@@ -94,7 +100,18 @@ async function request<T>(path: string, options: RequestInit = {}, _retry = true
   }
 
   const url = `${API_URL}${path}`;
-  const res = await fetch(url, { ...options, headers, cache: 'no-store' });
+  const controller = new AbortController();
+  const timeoutMs = 30000;
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+
+  let res: Response;
+  try {
+    res = await fetch(url, { ...options, headers, cache: 'no-store', signal: controller.signal });
+  } finally {
+    clearTimeout(id);
+  }
+
+  if (res.status === 204) return undefined as T;
 
   if (res.status === 401) {
     // Only attempt refresh in the browser — during SSR there is no token so a
@@ -111,13 +128,37 @@ async function request<T>(path: string, options: RequestInit = {}, _retry = true
     throw new Error('Unauthorized');
   }
 
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.error?.message || `Request failed: ${res.status}`);
+  // Parse the response body — some endpoints (e.g. 201 created) may return
+  // an empty body or a non-JSON payload, so we guard against parse failures.
+  if (res.headers.get('content-length') === '0') {
+    return undefined as T;
   }
 
-  if (res.status === 204) return undefined as T;
-  return res.json();
+  let body: unknown;
+  const contentType = res.headers.get('content-type');
+  if (contentType?.includes('application/json')) {
+    try {
+      body = await res.json();
+    } catch {
+      throw new Error(`Request failed: ${res.status} (invalid JSON response)`);
+    }
+  } else {
+    // Non-JSON response — return the raw text for debugging.
+    body = await res.text();
+  }
+
+  if (!res.ok) {
+    const errBody = body as Record<string, unknown> | string;
+    const message =
+      typeof errBody === 'object' && errBody !== null
+        ? (errBody as Record<string, unknown>).error?.message || (errBody as Record<string, unknown>).message || `Request failed: ${res.status}`
+        : typeof errBody === 'string'
+          ? errBody
+          : `Request failed: ${res.status}`;
+    throw new Error(message);
+  }
+
+  return body as T;
 }
 
 export const api = {

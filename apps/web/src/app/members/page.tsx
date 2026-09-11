@@ -378,7 +378,7 @@ export default function MembersPage() {
                         <div className="min-w-0 flex-1">
                           <p className="text-[13px] font-medium text-ink">{inv.email}</p>
                           <p className="font-mono text-[11px] text-ink-400">
-                            {ROLE_LABELS[inv.role] ?? inv.role} · Sent{' '}
+                            Invited by admin · {ROLE_LABELS[inv.role] ?? inv.role} role · Sent{' '}
                             {formatRelativeTime(inv.createdAt)} · Expires{' '}
                             {formatDate(inv.expiresAt)}
                           </p>

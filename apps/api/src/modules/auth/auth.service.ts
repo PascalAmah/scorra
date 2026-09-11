@@ -24,7 +24,7 @@ import type {
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
   private readonly SALT_ROUNDS = 12;
-  private readonly RESET_TOKEN_MINUTES = 60;
+  private readonly RESET_TOKEN_MINUTES = 10;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -84,13 +84,15 @@ export class AuthService {
 
     const tokens = await this.generateTokens(user);
 
-    // Fire-and-forget welcome email via the queue
     const welcomeJobData: WelcomeEmailJobData = {
       to: user.email,
       firstName: user.name.split(' ')[0] ?? user.name,
     };
     await this.emailQueue
-      .add('send-welcome', welcomeJobData, { attempts: 3, backoff: { type: 'exponential', delay: 5000 } })
+      .add('send-welcome', welcomeJobData, {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 5000 },
+      })
       .catch((err) => this.logger.warn(`Failed to queue welcome email: ${err.message}`));
 
     this.logger.log(`New user registered: ${user.email}`);
@@ -105,10 +107,10 @@ export class AuthService {
     const user = await this.prisma.user.findUnique({
       where: { email: email.toLowerCase() },
     });
-
-    // Always respond the same way whether or not the account exists, so the
-    // endpoint can't be used to enumerate registered email addresses.
-    const response = { message: 'If an account with that email exists, a password reset link has been sent.' };
+
+    const response = {
+      message: 'If an account with that email exists, a password reset link has been sent.',
+    };
     if (!user || user.status === 'INACTIVE') {
       return response;
     }
@@ -117,7 +119,6 @@ export class AuthService {
     expiresAt.setMinutes(expiresAt.getMinutes() + this.RESET_TOKEN_MINUTES);
 
     const resetToken = await this.prisma.$transaction(async (tx) => {
-      // Invalidate any outstanding reset tokens for this user
       await tx.passwordResetToken.updateMany({
         where: { userId: user.id, usedAt: null, expiresAt: { gt: new Date() } },
         data: { usedAt: new Date() },
@@ -132,7 +133,6 @@ export class AuthService {
       });
     });
 
-    // Enqueue the reset email — fire-and-forget via the queue
     const jobData: ResetPasswordEmailJobData = {
       to: user.email,
       firstName: user.name.split(' ')[0] ?? user.name,
@@ -140,7 +140,10 @@ export class AuthService {
       expiryMinutes: this.RESET_TOKEN_MINUTES,
     };
     await this.emailQueue
-      .add('send-reset-password', jobData, { attempts: 3, backoff: { type: 'exponential', delay: 5000 } })
+      .add('send-reset-password', jobData, {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 5000 },
+      })
       .catch((err) => this.logger.warn(`Failed to queue reset email: ${err.message}`));
 
     this.logger.log(`Password reset requested for ${user.email}`);
@@ -155,7 +158,9 @@ export class AuthService {
     });
 
     if (!resetRecord || resetRecord.usedAt || resetRecord.expiresAt < new Date()) {
-      throw new BadRequestException('This password reset link is invalid or has expired. Please request a new one.');
+      throw new BadRequestException(
+        'This password reset link is invalid or has expired. Please request a new one.',
+      );
     }
 
     const passwordHash = await bcrypt.hash(newPassword, this.SALT_ROUNDS);
@@ -169,7 +174,6 @@ export class AuthService {
         where: { id: resetRecord.id },
         data: { usedAt: new Date() },
       }),
-      // Revoke all refresh tokens — force re-login everywhere after a reset
       this.prisma.refreshToken.updateMany({
         where: { userId: resetRecord.userId, revokedAt: null },
         data: { revokedAt: new Date() },
@@ -206,7 +210,11 @@ export class AuthService {
       data: { lastLoginAt: new Date() },
     });
 
-    const userWithOrg = { ...user, organizationId: membership?.organizationId ?? null, organizationRole: membership?.role };
+    const userWithOrg = {
+      ...user,
+      organizationId: membership?.organizationId ?? null,
+      organizationRole: membership?.role,
+    };
     const tokens = await this.generateTokens(userWithOrg);
 
     return {

@@ -1,10 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import {
-  renderWelcomeEmail,
-  renderResetPasswordEmail,
-  renderInvitationEmail,
-} from './templates';
+import { renderWelcomeEmail, renderResetPasswordEmail, renderInvitationEmail } from './templates';
 
 // ─────────────────────────────────────────────────────────────
 // Option types
@@ -59,7 +55,8 @@ export class EmailService {
   private readonly from: string;
 
   constructor(private readonly config: ConfigService) {
-    this.apiUrl = this.config.get<string>('app.sendlibApiUrl') ?? 'https://sendlib.samueltuoyo.com/api/send';
+    this.apiUrl =
+      this.config.get<string>('app.sendlibApiUrl') ?? 'https://sendlib.samueltuoyo.com/api/send';
     this.apiKey = this.config.get<string>('app.sendlibApiKey') || undefined;
     this.from = this.config.get<string>('app.sendlibFrom') ?? 'Scorra <noreply@scorra.dev>';
 
@@ -133,7 +130,6 @@ export class EmailService {
     logLabel: string,
   ): Promise<void> {
     if (!this.apiKey) {
-      // No API key configured — log so developers can grab links locally.
       const match = html.match(/href="(https?:\/\/[^"]+)"/);
       this.logger.log(`[EMAIL – no SENDLIB_API_KEY] ${logLabel} | Link: ${match?.[1] ?? 'n/a'}`);
       return;
@@ -158,8 +154,6 @@ export class EmailService {
 
       this.logger.log(`Email sent: ${logLabel}`);
     } catch (err) {
-      // Never let email failure break the calling flow — log and rethrow so
-      // Bull can apply its retry/backoff policy.
       this.logger.error(`Failed to send email (${logLabel}): ${(err as Error).message}`);
       throw err;
     }
