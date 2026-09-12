@@ -24,8 +24,7 @@ export const useAuthStore = create<AuthState>()(
           refreshToken: session.refreshToken,
           user: session.user,
         }),
-      clearSession: () =>
-        set({ accessToken: null, refreshToken: null, user: null }),
+      clearSession: () => set({ accessToken: null, refreshToken: null, user: null }),
     }),
     {
       name: 'scorra-session',

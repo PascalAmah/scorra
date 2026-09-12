@@ -150,7 +150,11 @@ export function Sidebar({ className, onNavigate, onClose, ...props }: SidebarPro
             </span>
             <span className="min-w-0">
               <span className="block truncate text-[12.5px] font-semibold leading-tight">
-                {currentOrg ? currentOrg.name : user ? 'No org' : 'Not signed in'}
+                {currentOrg
+                  ? currentOrg.name
+                  : user
+                    ? (orgsData ? 'No org' : '…')
+                    : 'Not signed in'}
               </span>
               <span className="block font-mono text-[10.5px] text-ink-400">
                 {user ? (ROLE_LABELS[effectiveRole(user) ?? ''] ?? 'Member') : 'Not signed in'}

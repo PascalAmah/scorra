@@ -2,26 +2,34 @@
 
 import { AnimatePresence, motion } from 'motion/react';
 import { Menu01Icon, Cancel01Icon, Logout01Icon, UserCircleIcon } from 'hugeicons-react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Logo } from '@/components/landing/logo';
 import { useAuthStore } from '@/store/auth-store';
 import { signOut } from '@/services/auth-service';
+import { cn } from '@/lib/utils';
 
+// Absolute paths so these links also work from pages that render the navbar
+// outside the landing page (e.g. /docs). On the landing page the path already
+// matches, so the browser still treats them as same-document fragment jumps
+// and smooth-scrolls without a reload.
 const NAV_LINKS = [
-  { label: 'Product', href: '#product' },
-  { label: 'How it works', href: '#workflow' },
-  { label: 'FAQ', href: '#faq' },
-  { label: 'Docs', href: '/api/docs' },
+  { label: 'Product', href: '/#product' },
+  { label: 'How it works', href: '/#workflow' },
+  { label: 'FAQ', href: '/#faq' },
+  { label: 'Docs', href: '/docs' },
 ];
 
 export function Navbar() {
   const router = useRouter();
+  const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const user = useAuthStore((state) => state.user);
+
+  const isDocs = pathname?.startsWith('/docs') === true;
 
   const handleLogout = async () => {
     setUserMenuOpen(false);
@@ -41,7 +49,14 @@ export function Navbar() {
 
         <div className="hidden items-center gap-8 text-sm text-ink-500 md:flex">
           {NAV_LINKS.map((link) => (
-            <a key={link.label} href={link.href} className="transition-colors hover:text-ink">
+            <a
+              key={link.label}
+              href={link.href}
+              className={cn(
+                'transition-colors hover:text-ink',
+                link.href === '/docs' && isDocs && 'font-medium text-ink',
+              )}
+            >
               {link.label}
             </a>
           ))}
@@ -131,7 +146,10 @@ export function Navbar() {
                   key={link.label}
                   href={link.href}
                   onClick={() => setOpen(false)}
-                  className="rounded-sm px-2 py-3 text-sm font-medium text-ink-500 transition-colors hover:bg-ink-100 hover:text-ink"
+                  className={cn(
+                    'rounded-sm px-2 py-3 text-sm font-medium transition-colors hover:bg-ink-100 hover:text-ink',
+                    link.href === '/docs' && isDocs ? 'text-ink' : 'text-ink-500',
+                  )}
                 >
                   {link.label}
                 </a>

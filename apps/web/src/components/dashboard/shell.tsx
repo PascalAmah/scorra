@@ -15,6 +15,21 @@ export function useAppShell() {
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = React.useState(false);
+  const [mounted, setMounted] = React.useState(false);
+
+  // The persisted session lives in localStorage and is only available on the
+  // client, so the server-rendered HTML has no user. Holding the shell until
+  // the first client frame replaces that SSR flash of "Not signed in" /
+  // "Guest" / "No org" with a neutral loader, which then swaps in the real
+  // authenticated chrome.
+  React.useEffect(() => {
+    if (typeof requestAnimationFrame === 'undefined') {
+      setMounted(true);
+      return;
+    }
+    const id = requestAnimationFrame(() => setMounted(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
 
   React.useEffect(() => {
     if (!open) return;
@@ -24,6 +39,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [open]);
+
+  if (!mounted) {
+    return (
+      <div className="min-h-screen bg-paper">
+        <div className="flex min-h-screen items-center justify-center">
+          <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-ink-500">
+            Loading…
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <AppShellContext.Provider value={{ openSidebar: () => setOpen(true) }}>
