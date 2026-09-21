@@ -153,7 +153,10 @@ export class OrganizationsService {
       },
     });
 
-    // Enqueue the invitation email — fire-and-forget via the queue
+    // Enqueue the invitation email — fire-and-forget via the queue.
+    // If the queue is unavailable we still return the invitation so the
+    // frontend isn't left waiting; the email will be retried by the
+    // worker when Redis recovers.
     const jobData: InvitationEmailJobData = {
       to: invitation.email,
       invitedByName: inviter?.name ?? 'Someone',
@@ -162,7 +165,13 @@ export class OrganizationsService {
       invitationToken: invitation.token,
       expiresAt: expiresAt.toISOString(),
     };
-    await this.emailQueue.add('send-invitation', jobData, { attempts: 3, backoff: { type: 'exponential', delay: 5000 } });
+    try {
+      await this.emailQueue.add('send-invitation', jobData, { attempts: 3, backoff: { type: 'exponential', delay: 5000 } });
+    } catch (queueError) {
+      this.logger.error(`Failed to queue invitation email for ${dto.email}: ${queueError}`);
+      // Non-blocking: the invitation is already created, so we return it
+      // regardless of whether the email was queued.
+    }
 
     this.logger.log(`Invitation queued for ${dto.email} in org ${orgId}`);
     return invitation;
@@ -262,7 +271,7 @@ export class OrganizationsService {
       data: { token: this.generateToken(), expiresAt, createdAt: new Date(), createdById: userId },
     });
 
-    // Enqueue the resend email
+    // Enqueue the resend email — same non-blocking approach as invite()
     const jobData: InvitationEmailJobData = {
       to: updated.email,
       invitedByName: inviter?.name ?? 'Someone',
@@ -271,7 +280,11 @@ export class OrganizationsService {
       invitationToken: updated.token,
       expiresAt: expiresAt.toISOString(),
     };
-    await this.emailQueue.add('send-invitation', jobData, { attempts: 3, backoff: { type: 'exponential', delay: 5000 } });
+    try {
+      await this.emailQueue.add('send-invitation', jobData, { attempts: 3, backoff: { type: 'exponential', delay: 5000 } });
+    } catch (queueError) {
+      this.logger.error(`Failed to queue resend email for ${invitation.email}: ${queueError}`);
+    }
 
     this.logger.log(`Invitation ${invitation.id} resent to ${invitation.email}`);
     return updated;

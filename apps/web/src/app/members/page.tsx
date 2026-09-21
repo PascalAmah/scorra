@@ -1,7 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Search01Icon, Copy01Icon, Tick01Icon, Cancel01Icon } from 'hugeicons-react';
 import type { Invitation, OrganizationMember } from '@scorra/types';
@@ -10,8 +9,8 @@ import { AppShell } from '@/components/dashboard/shell';
 import { Topbar } from '@/components/dashboard/topbar';
 import { Button } from '@/components/ui/button';
 import { InviteModal } from '@/components/organization/invite-modal';
+import { useAuthGuard } from '@/hooks/use-auth-guard';
 import { useAuthStore } from '@/store/auth-store';
-import { api } from '@/lib/api';
 import { formatDate, formatRelativeTime } from '@/lib/utils';
 import {
   useChangeMemberRole,
@@ -43,7 +42,6 @@ function memberInitials(name: string) {
 }
 
 export default function MembersPage() {
-  const router = useRouter();
   const currentUserId = useAuthStore((s) => s.user?.id);
 
   const [search, setSearch] = useState('');
@@ -63,12 +61,7 @@ export default function MembersPage() {
   const { data: orgsData, isPending: loadingOrgs } = useOrganizations();
   const org = (orgsData ?? [])[0] ?? null;
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (!api.isAuthenticated) {
-      router.replace('/login');
-    }
-  }, [router]);
+  useAuthGuard();
 
   const { data: membersData, isPending: membersLoading } = useMembers(org?.id ?? '');
   const members = useMemo(() => membersData ?? [], [membersData]);
@@ -240,13 +233,13 @@ export default function MembersPage() {
             </div>
 
             {/* Members table */}
-            <div className="overflow-hidden rounded-2xl border border-ink-200 bg-white">
+            <div className="overflow-x-auto rounded-2xl border border-ink-200 bg-white">
               {membersLoading ? (
                 <p className="px-5 py-12 text-center font-mono text-[11px] text-ink-400">
                   Loading members…
                 </p>
               ) : (
-                <table className="w-full">
+                <table className="w-full min-w-[640px] text-left">
                   <thead>
                     <tr className="border-b border-ink-200 text-left font-mono text-[10.5px] uppercase tracking-[0.06em] text-ink-400">
                       <th className="py-3 pl-5 pr-4 font-medium">Member</th>
@@ -385,7 +378,7 @@ export default function MembersPage() {
                         <div className="min-w-0 flex-1">
                           <p className="text-[13px] font-medium text-ink">{inv.email}</p>
                           <p className="font-mono text-[11px] text-ink-400">
-                            {ROLE_LABELS[inv.role] ?? inv.role} · Sent{' '}
+                            Invited by admin · {ROLE_LABELS[inv.role] ?? inv.role} role · Sent{' '}
                             {formatRelativeTime(inv.createdAt)} · Expires{' '}
                             {formatDate(inv.expiresAt)}
                           </p>

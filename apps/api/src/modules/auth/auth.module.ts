@@ -2,7 +2,9 @@ import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { BullModule } from '@nestjs/bull';
 import { APP_GUARD } from '@nestjs/core';
+import { QueueName } from '@scorra/types';
 
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
@@ -13,6 +15,7 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 
 @Module({
   imports: [
+    BullModule.registerQueue({ name: QueueName.EMAIL_NOTIFICATIONS }),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       imports: [ConfigModule],

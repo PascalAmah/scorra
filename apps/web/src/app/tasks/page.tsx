@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Target01Icon } from 'hugeicons-react';
@@ -13,7 +13,7 @@ import { SearchFilterBar } from '@/components/ui/search-filter-bar';
 import { useTasks } from '@/hooks/use-tasks';
 import { useUsers } from '@/hooks/use-users';
 import { useAuthStore } from '@/store/auth-store';
-import { api } from '@/lib/api';
+import { useAuthGuard } from '@/hooks/use-auth-guard';
 import { formatNumber } from '@/lib/utils';
 import { TYPE_LABELS, initialsOf, progressOf } from '@/lib/task-utils';
 import { isOrgAdmin } from '@/lib/permissions';
@@ -37,12 +37,7 @@ export default function TasksPage() {
 
   const userById = useMemo(() => new Map(members.map((m) => [m.userId, m.user])), [members]);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (!api.isAuthenticated) {
-      router.replace('/login');
-    }
-  }, [router]);
+  useAuthGuard();
 
   const visible = useMemo(
     () => (filter === 'ALL' ? tasks : tasks.filter((t) => t.status === filter)),

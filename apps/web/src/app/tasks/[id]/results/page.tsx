@@ -21,6 +21,7 @@ import {
   useTaskResults,
   useTaskScores,
 } from '@/hooks/use-tasks';
+import { useAuthGuard } from '@/hooks/use-auth-guard';
 import { useAuthStore } from '@/store/auth-store';
 import { api } from '@/lib/api';
 import { cn, formatRelativeTime } from '@/lib/utils';
@@ -138,10 +139,7 @@ export default function TaskResultsPage() {
   useEffect(() => { setPairPage(1); }, [search, filter]);
   useEffect(() => { setSinglePage(1); setRankPage(1); }, [search]);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (!api.isAuthenticated) router.replace('/login');
-  }, [router]);
+  useAuthGuard();
 
   const isPairwise = task?.type === 'PAIRWISE';
   const evaluations = useMemo(() => resultsData?.data ?? [], [resultsData]);
@@ -348,7 +346,7 @@ function PairwiseResults({
           </p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
+            <table className="w-full border-collapse min-w-[640px]">
               <thead>
                 <tr className="border-b border-ink-200 bg-paper font-mono text-[10.5px] uppercase tracking-[0.06em] text-ink-500">
                   {['Item', 'Prompt', 'Votes', 'Final verdict', 'AI Judge', 'Agreement', ''].map(
@@ -733,7 +731,7 @@ function RankingResults({
           </p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
+            <table className="w-full border-collapse min-w-[640px]">
               <thead>
                 <tr className="border-b border-ink-200 bg-paper font-mono text-[10.5px] uppercase tracking-[0.06em] text-ink-500">
                   {['Item', 'Prompt', 'Winner', 'Rankings', 'Agreement', ''].map((h, i) => (
@@ -959,7 +957,7 @@ function SingleResults({
           </p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
+            <table className="w-full border-collapse min-w-[640px]">
               <thead>
                 <tr className="border-b border-ink-200 bg-paper font-mono text-[10.5px] uppercase tracking-[0.06em] text-ink-500">
                   {['Item', 'Prompt', 'Evaluator', 'Score', 'Status', 'Submitted', ''].map(

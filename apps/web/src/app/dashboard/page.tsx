@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useAuthGuard } from '@/hooks/use-auth-guard';
 import Link from 'next/link';
 import { motion } from 'motion/react';
 import {
@@ -117,19 +118,15 @@ export default function DashboardPage() {
   const user = useAuthStore((s) => s.user);
   const isAdmin = isOrgAdmin(user);
 
-  const { data: orgs } = useOrganizations();
-  const hasOrg = (orgs ?? []).length > 0;
+  const { data: orgs, isPending: loadingOrgs, error: orgsError } = useOrganizations();
+  const hasOrg = Boolean(user) && (orgs ?? []).length > 0;
 
   useEffect(() => {
     const id = requestAnimationFrame(() => setMounted(true));
     return () => cancelAnimationFrame(id);
   }, []);
 
-  useEffect(() => {
-    if (mounted && !accessToken) {
-      router.replace('/login');
-    }
-  }, [mounted, accessToken, router]);
+  useAuthGuard();
 
   const taskRows = useMemo<TaskRow[]>(
     () =>
@@ -166,6 +163,39 @@ export default function DashboardPage() {
       <div className="flex min-h-screen items-center justify-center bg-paper">
         <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-ink-500">Loading…</p>
       </div>
+    );
+  }
+
+  // Wait for the organizations query to settle before deciding whether the
+  // user genuinely has no org — checking before it resolves would flash a
+  // misleading "No organization access" state while the data is still
+  // loading.
+  if (loadingOrgs) {
+    return (
+      <AppShell>
+        <div className="flex h-[60vh] items-center justify-center">
+          <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-ink-400">
+            Loading…
+          </p>
+        </div>
+      </AppShell>
+    );
+  }
+
+  if (orgsError && !hasOrg) {
+    return (
+      <AppShell>
+        <div className="flex h-[60vh] flex-col items-center justify-center gap-4 px-6 text-center">
+          <p className="text-[15px] font-semibold text-ink">Couldn&apos;t load your workspace</p>
+          <p className="max-w-sm text-[13px] text-ink-500">
+            We couldn&apos;t reach the server to load your organizations. Check your
+            connection and try again.
+          </p>
+          <Button variant="ghost" onClick={() => window.location.reload()}>
+            Retry
+          </Button>
+        </div>
+      </AppShell>
     );
   }
 

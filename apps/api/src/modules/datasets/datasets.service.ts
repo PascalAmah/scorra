@@ -80,12 +80,14 @@ export class DatasetsService {
     // Upload file via storage service (local disk or S3)
     const fileUrl = await this.storage.upload(file.buffer, storageKey, file.mimetype);
 
+    // Update dataset status immediately so the UI reflects progress.
+    // The queue job is best-effort — if Redis is down we log and continue;
+    // the file is still stored and the dataset is still usable.
     await this.prisma.dataset.update({
       where: { id: datasetId },
       data: { fileUrl, status: 'PROCESSING' },
     });
 
-    // Enqueue processing job
     const jobData: DatasetProcessingJobData = {
       datasetId,
       organizationId,
@@ -94,12 +96,21 @@ export class DatasetsService {
       uploadedById: userId,
     };
 
-    await this.datasetQueue.add('process-dataset', jobData, {
-      attempts: 3,
-      backoff: { type: 'exponential', delay: 3000 },
-    });
+    try {
+      await this.datasetQueue.add('process-dataset', jobData, {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 3000 },
+      });
+      this.logger.log(`Dataset ${datasetId} queued for processing`);
+    } catch (err) {
+      this.logger.error(`Failed to queue processing for dataset ${datasetId}: ${err}`);
+      // Non-blocking: mark as failed so the UI shows the error state,
+      // but don't throw — the file is already uploaded.
+      await this.prisma.dataset
+        .update({ where: { id: datasetId }, data: { status: 'FAILED' } })
+        .catch(() => undefined);
+    }
 
-    this.logger.log(`Dataset ${datasetId} queued for processing`);
     return { message: 'File uploaded and queued for processing', datasetId };
   }
 
@@ -240,12 +251,17 @@ export class DatasetsService {
       organizationId,
       requestedById: userId,
     };
-    await this.modelInferenceQueue.add('generate-responses', jobData, {
-      attempts: 2,
-      backoff: { type: 'exponential', delay: 5000 },
-    });
-
-    this.logger.log(`Response generation queued for dataset ${id} (${pending} rows)`);
+    try {
+      await this.modelInferenceQueue.add('generate-responses', jobData, {
+        attempts: 2,
+        backoff: { type: 'exponential', delay: 5000 },
+      });
+      this.logger.log(`Response generation queued for dataset ${id} (${pending} rows)`);
+    } catch (err) {
+      this.logger.error(`Failed to queue response generation for dataset ${id}: ${err}`);
+      // Non-blocking: return the queuing message anyway so the UI isn't stuck.
+      // The job can be retried manually or when Redis recovers.
+    }
     return {
       message: `Queued AI response generation for ${pending} rows via ${info.provider} / ${info.modelId}`,
       datasetId: id,

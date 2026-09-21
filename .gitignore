@@ -1,5 +1,6 @@
 # Docs (reference HTML + build notes — not committed)
-docs/
+# Root-anchored: an unanchored `docs/` also swallowed apps/web/src/app/docs.
+/docs/
 scripts/
 
 # Dependencies
