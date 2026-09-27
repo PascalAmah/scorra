@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { Copy01Icon, Download01Icon, Search01Icon } from 'hugeicons-react';
+import { Copy01Icon, Download01Icon, RefreshIcon, Search01Icon } from 'hugeicons-react';
 
 import { AppShell } from '@/components/dashboard/shell';
 import { DatasetHeader } from '@/components/datasets/dataset-header';
@@ -16,6 +16,7 @@ import {
   useDatasetRows,
   useDeleteDataset,
   useGenerateDatasetResponses,
+  useReprocessDataset,
   useUpdateDataset,
 } from '@/hooks/use-datasets';
 import { useAuthGuard } from '@/hooks/use-auth-guard';
@@ -32,6 +33,14 @@ const PROMPT_TYPE_LABELS: Record<string, string> = {
   TRANSLATION: 'translation',
   CUSTOM: 'custom',
 };
+
+/**
+ * How long a dataset may stay at PROCESSING before the UI stops pretending it
+ * is making progress. The API reaper re-queues (or fails) these jobs on its own
+ * schedule — this just gives the user an immediate "Retry processing" escape
+ * hatch instead of an endless spinner.
+ */
+const STALE_PROCESSING_MS = 5 * 60 * 1000;
 
 export default function DatasetDetailPage() {
   const router = useRouter();
@@ -58,6 +67,7 @@ export default function DatasetDetailPage() {
   const pagination = useMemo(() => (rowsData?.pagination ?? null) as Pagination | null, [rowsData]);
 
   const cloneMutation = useCloneDataset(id);
+  const reprocessMutation = useReprocessDataset(id);
 
   useAuthGuard();
 
@@ -142,6 +152,19 @@ export default function DatasetDetailPage() {
     }
   };
 
+  const handleReprocess = async () => {
+    setBusy(true);
+    setActionMsg('');
+    try {
+      const res = await reprocessMutation.mutateAsync();
+      setActionMsg(res.message ?? 'Dataset processing queued — rows refresh when ready.');
+    } catch (err) {
+      setActionMsg(err instanceof Error ? err.message : 'Failed to re-queue dataset processing');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (datasetLoading || !dataset) {
     return (
       <AppShell>
@@ -152,12 +175,28 @@ export default function DatasetDetailPage() {
     );
   }
 
+  // The list is polled while processing, so this re-evaluates on every tick.
+  const processingStale =
+    isProcessing && Date.now() - new Date(dataset.updatedAt).getTime() > STALE_PROCESSING_MS;
+  const canReprocess = dataset.status === 'FAILED' || processingStale;
+
   const actions = (
     <>
       <Button variant="ghost" onClick={handleClone} disabled={busy}>
         <Copy01Icon size={14} />
         Clone
       </Button>
+      {canReprocess && (
+        <Button
+          variant="ghost"
+          onClick={handleReprocess}
+          disabled={busy || reprocessMutation.isPending}
+          title="Re-queue processing from the stored file — no re-upload needed"
+        >
+          <RefreshIcon size={14} />
+          {reprocessMutation.isPending ? 'Retrying…' : 'Retry processing'}
+        </Button>
+      )}
       {dataset.status === 'READY' && (
         <Button
           variant="ghost"
@@ -384,7 +423,16 @@ export default function DatasetDetailPage() {
         {dataset.status === 'PROCESSING' && (
           <div className="mt-4 flex items-center gap-2 rounded-md border border-ink-200 bg-paper px-3.5 py-2.5 font-mono text-[11.5px] text-ink-500">
             <span className="h-2 w-2 animate-pulse rounded-full bg-ink" />
-            Processing — rows and AI responses refresh automatically.
+            {processingStale
+              ? 'Still processing — this is taking longer than expected. Use “Retry processing” above to re-queue the stored file.'
+              : 'Processing — rows and AI responses refresh automatically.'}
+          </div>
+        )}
+
+        {dataset.status === 'FAILED' && (
+          <div className="mt-4 rounded-md border border-ink-200 bg-paper px-3.5 py-2.5 font-mono text-[11.5px] text-ink-600">
+            Processing failed. Use “Retry processing” above to re-queue the stored file, or import a
+            corrected version.
           </div>
         )}
       </div>
