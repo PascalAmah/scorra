@@ -99,7 +99,7 @@ function HeroPanel() {
 
 export function Hero() {
   return (
-    <section className="relative overflow-hidden pt-16 pb-16 text-center md:pt-24 md:pb-16">
+    <section className="relative overflow-hidden pt-16 pb-16 text-center md:pt-16 md:pb-16">
       <Container>
         <motion.div
           variants={container}

@@ -47,7 +47,7 @@ export function renderResetPasswordEmail(data: ResetPasswordEmailData): {
                   Didn't request this? You can safely ignore this email &mdash; your password won't change unless you click the link above and set a new one.
                 </p>
               </div>`,
-    footerNote: `Concerned about account security? Contact us at <a href="mailto:pascalamaliri@gmail.com" style="color:#5C5C5C;text-decoration:underline;">support@scorra.ai</a>.`,
+    footerNote: `Concerned about account security? Contact us at <a href="mailto:pascalamaliri@gmail.com" style="color:#5C5C5C;text-decoration:underline;">pascalamaliri@gmail.com</a>.`,
   });
 
   return { subject, text, html };

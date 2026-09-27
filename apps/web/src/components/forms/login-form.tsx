@@ -2,9 +2,9 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { motion } from 'motion/react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import { useForm } from 'react-hook-form';
 
 import { AuthFooter } from '@/components/auth/auth-footer';
@@ -13,17 +13,30 @@ import { FormField } from '@/components/auth/form-field';
 import { PasswordInput } from '@/components/auth/password-input';
 // import { SocialButton } from '@/components/auth/social-button';
 import { SubmitButton } from '@/components/auth/submit-button';
-import {
-  fadeUpContainer,
-  fadeUpItem,
-} from '@/components/auth/motion-variants';
+import { fadeUpContainer, fadeUpItem } from '@/components/auth/motion-variants';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { signIn } from '@/services/auth-service';
 import { loginSchema, type LoginValues } from '@/validations/auth';
 
+function resolvePostLoginDestination(next?: string | null): string {
+  if (next && next.startsWith('/') && !next.startsWith('//') && next.length < 2048) {
+    return next;
+  }
+  return '/dashboard';
+}
+
 export function LoginForm() {
+  return (
+    <Suspense fallback={null}>
+      <LoginFormContent />
+    </Suspense>
+  );
+}
+
+function LoginFormContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [serverError, setServerError] = useState<string | null>(null);
   const [slowRequest, setSlowRequest] = useState(false);
 
@@ -39,12 +52,10 @@ export function LoginForm() {
   const onSubmit = async (values: LoginValues) => {
     setServerError(null);
     setSlowRequest(false);
-    // Render free-tier cold starts can take 30s+ — surface a hint so the
-    // spinner doesn't look like a hang.
     const slowTimer = setTimeout(() => setSlowRequest(true), 8000);
     try {
       await signIn(values);
-      router.push('/dashboard');
+      router.push(resolvePostLoginDestination(searchParams.get('next')));
     } catch (error) {
       setServerError(
         error instanceof Error ? error.message : 'Unable to log in. Please try again.',
@@ -124,8 +135,7 @@ export function LoginForm() {
         <SubmitButton loading={isSubmitting}>Log in</SubmitButton>
         {slowRequest && isSubmitting && (
           <p className="mt-3 text-center text-[12px] text-ink-500" role="status">
-            Still connecting… the server may be waking up. This can take up to a
-            minute on the free tier.
+            Still connecting… the server may be waking up. This can take up to a minute.
           </p>
         )}
       </motion.div>
@@ -138,10 +148,7 @@ export function LoginForm() {
       <motion.div variants={fadeUpItem}>
         <AuthFooter>
           Don&rsquo;t have an account?{' '}
-          <a
-            href="/register"
-            className="font-semibold text-ink transition-colors hover:underline"
-          >
+          <a href="/register" className="font-semibold text-ink transition-colors hover:underline">
             Create one free
           </a>
         </AuthFooter>

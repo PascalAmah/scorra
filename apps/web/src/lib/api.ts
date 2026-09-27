@@ -30,6 +30,7 @@ import {
   User,
 } from '@scorra/types';
 
+import { establishSessionMarker } from '@/lib/session-cookie';
 import { useAuthStore } from '@/store/auth-store';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api/v1';
@@ -71,6 +72,8 @@ async function refreshAccessToken(): Promise<string | null> {
         refreshToken: data.refreshToken,
         user: data.user ?? prev.user,
       });
+      // Re-arm the middleware marker so long-lived sessions aren't bounced.
+      void establishSessionMarker();
       return data.accessToken as string;
     } catch {
       useAuthStore.getState().clearSession();

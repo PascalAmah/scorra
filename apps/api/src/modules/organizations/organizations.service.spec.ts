@@ -1,8 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { getQueueToken } from '@nestjs/bull';
 import { OrganizationsService } from './organizations.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotFoundException, ForbiddenException, ConflictException } from '@nestjs/common';
-import { UserRole } from '@scorra/types';
+import { UserRole, QueueName } from '@scorra/types';
 
 describe('OrganizationsService', () => {
   let service: OrganizationsService;
@@ -31,13 +32,25 @@ describe('OrganizationsService', () => {
       invitation: {
         create: jest.fn(),
         findUnique: jest.fn(),
+        findMany: jest.fn(),
         update: jest.fn(),
+        delete: jest.fn(),
+      },
+      user: {
+        findUnique: jest.fn(),
       },
       $transaction: jest.fn((cb: any) => cb(prisma)),
     };
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [OrganizationsService, { provide: PrismaService, useValue: prisma }],
+      providers: [
+        OrganizationsService,
+        { provide: PrismaService, useValue: prisma },
+        {
+          provide: getQueueToken(QueueName.EMAIL_NOTIFICATIONS),
+          useValue: { add: jest.fn().mockResolvedValue(undefined) },
+        },
+      ],
     }).compile();
 
     service = module.get<OrganizationsService>(OrganizationsService);
@@ -111,20 +124,55 @@ describe('OrganizationsService', () => {
   describe('invitations', () => {
     it('should create invitation', async () => {
       prisma.organizationMember.findFirst.mockResolvedValue({ role: UserRole.ORG_ADMIN });
+      prisma.organization.findUnique.mockResolvedValue({ name: 'Test Org' });
+      prisma.user.findUnique.mockResolvedValue({ name: 'Inviter' });
       prisma.invitation.create.mockResolvedValue({ id: 'inv-1', email: 'new@test.com', organizationId: orgId, role: UserRole.EVALUATOR });
       const result = await service.invite(orgId, userId, { email: 'new@test.com', role: UserRole.EVALUATOR });
       expect(result.email).toBe('new@test.com');
     });
 
-    it('should accept invitation', async () => {
+    it('should accept invitation when the signed-in email matches', async () => {
       prisma.invitation.findUnique.mockResolvedValue({
-        id: 'inv-1', token: 'tok', organizationId: orgId, role: 'EVALUATOR',
+        id: 'inv-1', token: 'tok', email: 'me@test.com', organizationId: orgId, role: 'EVALUATOR',
         expiresAt: new Date(Date.now() + 86400000), acceptedAt: null,
       });
+      prisma.user.findUnique.mockResolvedValue({ email: 'me@test.com' });
       prisma.organizationMember.findFirst.mockResolvedValue(null);
       prisma.$transaction.mockResolvedValue([]);
       const result = await service.acceptInvitation('tok', userId);
       expect(result.organizationId).toBe(orgId);
+    });
+
+    it('should reject acceptance when the invitation is bound to a different email', async () => {
+      prisma.invitation.findUnique.mockResolvedValue({
+        id: 'inv-1', token: 'tok', email: 'other@test.com', organizationId: orgId, role: UserRole.ORG_ADMIN,
+        expiresAt: new Date(Date.now() + 86400000), acceptedAt: null,
+      });
+      prisma.user.findUnique.mockResolvedValue({ email: 'me@test.com' });
+      await expect(service.acceptInvitation('tok', userId)).rejects.toThrow(ForbiddenException);
+      // The membership must never be created on a mismatched email.
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('listInvitations', () => {
+    it('should list pending invitations for an org admin', async () => {
+      prisma.organizationMember.findFirst.mockResolvedValue({ role: UserRole.ORG_ADMIN });
+      prisma.invitation.findMany.mockResolvedValue([{ id: 'inv-1', email: 'a@b.com' }]);
+      const result = await service.listInvitations(orgId, userId);
+      expect(result).toEqual([{ id: 'inv-1', email: 'a@b.com' }]);
+    });
+
+    it('should forbid a non-admin member from listing invitations', async () => {
+      prisma.organizationMember.findFirst.mockResolvedValue({ role: UserRole.EVALUATOR });
+      await expect(service.listInvitations(orgId, userId)).rejects.toThrow(ForbiddenException);
+      expect(prisma.invitation.findMany).not.toHaveBeenCalled();
+    });
+
+    it('should forbid a non-member from listing invitations', async () => {
+      prisma.organizationMember.findFirst.mockResolvedValue(null);
+      await expect(service.listInvitations(orgId, userId)).rejects.toThrow(ForbiddenException);
+      expect(prisma.invitation.findMany).not.toHaveBeenCalled();
     });
   });
 });

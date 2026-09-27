@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Diamond01Icon, Search01Icon } from 'hugeicons-react';
@@ -12,8 +12,8 @@ import { Stepper } from '@/components/ui/stepper';
 import { useDatasets } from '@/hooks/use-datasets';
 import { useCreateTask } from '@/hooks/use-tasks';
 import { useUsers } from '@/hooks/use-users';
+import { useAdminGuard } from '@/hooks/use-admin-guard';
 import { useAuthGuard } from '@/hooks/use-auth-guard';
-import { api } from '@/lib/api';
 import { formatNumber } from '@/lib/utils';
 import { cn } from '@/lib/utils';
 import { TYPE_LABELS, initialsOf } from '@/lib/task-utils';
@@ -103,16 +103,21 @@ export default function NewTaskPage() {
   const createMutation = useCreateTask();
 
   useAuthGuard();
+  const isAdmin = useAdminGuard();
 
-  const selectedDataset = useMemo(() => datasets.find((d) => d.id === datasetId), [datasets, datasetId]);
-  const selectedUsers = useMemo(() => users.filter((m) => selectedEvaluators.includes(m.userId)), [users, selectedEvaluators]);
+  const selectedDataset = useMemo(
+    () => datasets.find((d) => d.id === datasetId),
+    [datasets, datasetId],
+  );
+  const selectedUsers = useMemo(
+    () => users.filter((m) => selectedEvaluators.includes(m.userId)),
+    [users, selectedEvaluators],
+  );
+
+  if (!isAdmin) return null;
 
   const canContinue =
-    step === 0
-      ? Boolean(datasetId && name.trim())
-      : step === 1
-        ? criteria.length > 0
-        : true;
+    step === 0 ? Boolean(datasetId && name.trim()) : step === 1 ? criteria.length > 0 : true;
 
   const updateCriteria = (index: number, patch: Partial<ScoringCriteria>) => {
     setCriteria((prev) => prev.map((c, i) => (i === index ? { ...c, ...patch } : c)));
@@ -205,14 +210,26 @@ export default function NewTaskPage() {
                               : 'border-ink-400',
                           )}
                         />
-                        <Diamond01Icon size={15} className={cn(selected ? 'text-ink-400' : 'text-ink-400')} />
+                        <Diamond01Icon
+                          size={15}
+                          className={cn(selected ? 'text-ink-400' : 'text-ink-400')}
+                        />
                         <span className="min-w-0 flex-1">
-                          <span className="block truncate text-[13.5px] font-semibold">{d.name}</span>
-                          <span className={cn('block font-mono text-[11px]', selected ? 'text-ink-400' : 'text-ink-500')}>
+                          <span className="block truncate text-[13.5px] font-semibold">
+                            {d.name}
+                          </span>
+                          <span
+                            className={cn(
+                              'block font-mono text-[11px]',
+                              selected ? 'text-ink-400' : 'text-ink-500',
+                            )}
+                          >
                             {d.format} · v{d.version} · updated {d.updatedAt ? 'recently' : '—'}
                           </span>
                         </span>
-                        <span className="shrink-0 font-mono text-[12px]">{formatNumber(d.rowCount)} rows</span>
+                        <span className="shrink-0 font-mono text-[12px]">
+                          {formatNumber(d.rowCount)} rows
+                        </span>
                       </button>
                     );
                   })}
@@ -263,7 +280,9 @@ export default function NewTaskPage() {
               <h3 className="mb-4 text-[15px]">Task basics</h3>
               <div className="space-y-4">
                 <div>
-                  <label className="mb-1.5 block text-[12.5px] font-semibold text-ink-700">Task name</label>
+                  <label className="mb-1.5 block text-[12.5px] font-semibold text-ink-700">
+                    Task name
+                  </label>
                   <input
                     type="text"
                     value={name}
@@ -341,7 +360,10 @@ export default function NewTaskPage() {
                     value={c.dimension}
                     onChange={(e) => {
                       const dim = e.target.value as ScoreDimension;
-                      updateCriteria(i, { dimension: dim, label: dim.charAt(0) + dim.slice(1).toLowerCase() });
+                      updateCriteria(i, {
+                        dimension: dim,
+                        label: dim.charAt(0) + dim.slice(1).toLowerCase(),
+                      });
                     }}
                     className="flex-1 rounded-sm border border-ink-300 px-2.5 py-2 text-[13.5px] outline-none focus:border-ink"
                   >
@@ -486,12 +508,16 @@ export default function NewTaskPage() {
                   ['Due date', dueDate ? new Date(dueDate).toLocaleDateString() : '—'],
                   [
                     'Evaluators',
-                    selectedUsers.length ? selectedUsers.map((m) => m.user.name || m.user.email).join(', ') : 'None',
+                    selectedUsers.length
+                      ? selectedUsers.map((m) => m.user.name || m.user.email).join(', ')
+                      : 'None',
                   ],
                 ].map(([k, v]) => (
                   <div key={k} className="flex justify-between gap-4 py-3 text-[13px]">
                     <span className="text-ink-500">{k}</span>
-                    <span className="truncate text-right font-mono font-semibold text-ink">{v}</span>
+                    <span className="truncate text-right font-mono font-semibold text-ink">
+                      {v}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -530,7 +556,11 @@ export default function NewTaskPage() {
         )}
 
         <div className="mt-6 flex items-center justify-between">
-          <Button variant="ghost" type="button" onClick={() => (step === 0 ? router.push('/tasks') : setStep(step - 1))}>
+          <Button
+            variant="ghost"
+            type="button"
+            onClick={() => (step === 0 ? router.push('/tasks') : setStep(step - 1))}
+          >
             {step === 0 ? 'Cancel' : '← Back'}
           </Button>
           {step < 3 ? (

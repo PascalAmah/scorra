@@ -47,7 +47,8 @@ export class OrganizationsService {
         data: {
           name: dto.name,
           slug,
-          plan: dto.plan ?? 'FREE',
+          // Plan is a server-side concern (billing/upgrades), never client-controlled.
+          plan: 'FREE',
         },
       });
 
@@ -207,6 +208,21 @@ export class OrganizationsService {
     if (invitation.expiresAt < new Date()) throw new ForbiddenException('Invitation has expired');
     if (invitation.acceptedAt) throw new ConflictException('Invitation already accepted');
 
+    // Invitations are email-bound: only the invited account may accept them.
+    // Without this check, anyone who obtains a pending invitation's token
+    // (e.g. from a forwarded link) could self-join the organization with the
+    // invitation's role — including ORG_ADMIN.
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true },
+    });
+    if (!user) throw new NotFoundException('User not found');
+    if (user.email.toLowerCase() !== invitation.email) {
+      throw new ForbiddenException(
+        `This invitation was sent to ${invitation.email}. Sign in with that account to accept it.`,
+      );
+    }
+
     const existingMember = await this.prisma.organizationMember.findFirst({
       where: { userId, organizationId: invitation.organizationId },
     });
@@ -230,7 +246,15 @@ export class OrganizationsService {
     return { message: 'Invitation accepted', organizationId: invitation.organizationId };
   }
 
-  async listInvitations(orgId: string, _userId: string) {
+  async listInvitations(orgId: string, userId: string) {
+    // Defense in depth: the route is already @Roles(ORG_ADMIN) — this guard
+    // re-verifies membership + role against the database, so a stale JWT
+    // organizationRole can never list another org's invitations.
+    await this.ensureOrgAdmin(orgId, userId);
+
+    // Note: `token` is deliberately NOT returned here. The invitation token is
+    // a bearer credential for self-joining the org; it is only ever sent to
+    // the invited email address (and to the admin in the invite() response).
     return this.prisma.invitation.findMany({
       where: { organizationId: orgId, acceptedAt: null },
       orderBy: { createdAt: 'desc' },
@@ -239,7 +263,6 @@ export class OrganizationsService {
         email: true,
         organizationId: true,
         role: true,
-        token: true,
         expiresAt: true,
         acceptedAt: true,
         createdById: true,
