@@ -78,7 +78,7 @@ export function renderInvitationEmail(data: InvitationEmailData): {
               <p style="font-family:'IBM Plex Sans',Arial,sans-serif;font-size:12.5px;line-height:1.6;color:#8C8C8C;margin:20px 0 0;">
                 This invitation expires on ${expiryDate}. No experience with AI evaluation needed &mdash; the rubric and task instructions are built into each task.
               </p>`,
-    footerNote: `Questions about this invite? Reach the workspace owner or <a href="mailto:pascalamaliri@gmail.com" style="color:#5C5C5C;text-decoration:underline;">support@scorra.ai</a>.`,
+    footerNote: `Questions about this invite? Reach the workspace owner or <a href="mailto:pascalamaliri@gmail.com" style="color:#5C5C5C;text-decoration:underline;">pascalamaliri@gmail.com</a>.`,
   });
 
   return { subject, text, html };

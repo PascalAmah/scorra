@@ -86,6 +86,7 @@ export class OrganizationsController {
   }
 
   @Get(':id/invitations')
+  @Roles(UserRole.ORG_ADMIN, UserRole.SUPER_ADMIN)
   @ApiOperation({ summary: 'List pending invitations for the organization' })
   listInvitations(@Param('id') id: string, @CurrentUser() user: AuthTokenPayload) {
     return this.organizationsService.listInvitations(id, user.sub);

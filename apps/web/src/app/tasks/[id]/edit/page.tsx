@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { AppShell } from '@/components/dashboard/shell';
 import { Button } from '@/components/ui/button';
 import { useTask } from '@/hooks/use-tasks';
+import { useAuthGuard } from '@/hooks/use-auth-guard';
 import { api } from '@/lib/api';
 import type { EvaluationTask } from '@scorra/types';
 
@@ -16,6 +17,8 @@ export default function EditTaskPage() {
   const taskId = params.id as string;
 
   const { data: task, isPending } = useTask(taskId);
+
+  useAuthGuard();
 
   if (isPending || !task) {
     return (

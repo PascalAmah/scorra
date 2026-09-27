@@ -1,11 +1,13 @@
 import type { AuthResponse } from '@scorra/types';
 
 import { api } from '@/lib/api';
+import { establishSessionMarker } from '@/lib/session-cookie';
 import { useAuthStore } from '@/store/auth-store';
 import type { LoginValues, RegisterValues } from '@/validations/auth';
 
 export async function signIn(values: LoginValues): Promise<AuthResponse> {
   const session = await api.login(values.email, values.password);
+  await establishSessionMarker();
   useAuthStore.getState().setSession(session);
   return session;
 }
@@ -17,10 +19,12 @@ export async function signUp(values: RegisterValues): Promise<AuthResponse> {
     name: `${values.firstName} ${values.lastName}`.trim(),
     organizationName: values.organizationName,
   });
+  await establishSessionMarker();
   useAuthStore.getState().setSession(session);
   return session;
 }
 
 export async function signOut(): Promise<void> {
   await api.logout();
+  await establishSessionMarker();
 }

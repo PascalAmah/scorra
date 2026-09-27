@@ -23,6 +23,7 @@ import { useAuthStore } from '@/store/auth-store';
 import { useOrganizations } from '@/hooks/use-organization';
 import { signOut } from '@/services/auth-service';
 import { api } from '@/lib/api';
+import { establishSessionMarker } from '@/lib/session-cookie';
 import { cn } from '@/lib/utils';
 import { effectiveRole, isOrgAdmin } from '@/lib/permissions';
 
@@ -107,6 +108,8 @@ export function Sidebar({ className, onNavigate, onClose, ...props }: SidebarPro
     try {
       const session = await api.switchOrg(orgId);
       setSession(session);
+      // Re-arm the marker before the reload navigates to a protected page.
+      await establishSessionMarker();
       window.location.reload();
     } catch {
       // silent fail

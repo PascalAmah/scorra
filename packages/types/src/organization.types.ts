@@ -48,7 +48,7 @@ export interface Invitation {
   email: string;
   organizationId: string;
   role: string;
-  token: string;
+  token?: string;
   expiresAt: Date;
   acceptedAt: Date | null;
   createdById: string;
@@ -58,7 +58,6 @@ export interface Invitation {
 export interface CreateOrganizationRequest {
   name: string;
   slug?: string;
-  plan?: OrganizationPlan;
 }
 
 export interface InviteMemberRequest {

@@ -2,6 +2,8 @@ import type { AuthResponse } from '@scorra/types';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
+import { clearSessionMarker } from '@/lib/session-cookie';
+
 interface AuthState {
   accessToken: string | null;
   refreshToken: string | null;
@@ -24,7 +26,10 @@ export const useAuthStore = create<AuthState>()(
           refreshToken: session.refreshToken,
           user: session.user,
         }),
-      clearSession: () => set({ accessToken: null, refreshToken: null, user: null }),
+      clearSession: () => {
+        void clearSessionMarker();
+        set({ accessToken: null, refreshToken: null, user: null });
+      },
     }),
     {
       name: 'scorra-session',
@@ -34,7 +39,7 @@ export const useAuthStore = create<AuthState>()(
         user: state.user,
       }),
       onRehydrateStorage: () => () => {
-        useAuthStore.getState().rehydrated = true;
+        useAuthStore.setState({ rehydrated: true });
       },
     },
   ),

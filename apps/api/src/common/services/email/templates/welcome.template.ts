@@ -64,7 +64,7 @@ export function renderWelcomeEmail(data: WelcomeEmailData): {
                   </td>
                 </tr>
               </table>`,
-    footerNote: `Need a hand getting started? Reply to this email or reach us at <a href="mailto:pascalamaliri@gmail.com" style="color:#5C5C5C;text-decoration:underline;">support@scorra.ai</a>.`,
+    footerNote: `Need a hand getting started? Reply to this email or reach us at <a href="mailto:pascalamaliri@gmail.com" style="color:#5C5C5C;text-decoration:underline;">pascalamaliri@gmail.com</a>.`,
   });
 
   return { subject, text, html };

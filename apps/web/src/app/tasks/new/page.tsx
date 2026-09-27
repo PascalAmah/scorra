@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Diamond01Icon, Search01Icon } from 'hugeicons-react';
@@ -13,7 +13,8 @@ import { useDatasets } from '@/hooks/use-datasets';
 import { useCreateTask } from '@/hooks/use-tasks';
 import { useUsers } from '@/hooks/use-users';
 import { useAuthGuard } from '@/hooks/use-auth-guard';
-import { api } from '@/lib/api';
+import { isOrgAdmin } from '@/lib/permissions';
+import { useAuthStore } from '@/store/auth-store';
 import { formatNumber } from '@/lib/utils';
 import { cn } from '@/lib/utils';
 import { TYPE_LABELS, initialsOf } from '@/lib/task-utils';
@@ -102,10 +103,20 @@ export default function NewTaskPage() {
 
   const createMutation = useCreateTask();
 
+  const currentUser = useAuthStore((s) => s.user);
+  const isAdmin = isOrgAdmin(currentUser);
+
   useAuthGuard();
 
   const selectedDataset = useMemo(() => datasets.find((d) => d.id === datasetId), [datasets, datasetId]);
   const selectedUsers = useMemo(() => users.filter((m) => selectedEvaluators.includes(m.userId)), [users, selectedEvaluators]);
+
+  // Creating tasks is admin-only — mirror the API's `@Roles(ORG_ADMIN, SUPER_ADMIN)`
+  // guard in the UI so evaluators never see the creator form.
+  if (!isAdmin) {
+    router.replace('/tasks');
+    return null;
+  }
 
   const canContinue =
     step === 0
