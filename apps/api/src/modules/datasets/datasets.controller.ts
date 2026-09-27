@@ -148,6 +148,17 @@ export class DatasetsController {
     return this.datasetsService.update(id, orgId, dto);
   }
 
+  @Post(':id/reprocess')
+  @Roles(UserRole.ORG_ADMIN, UserRole.SUPER_ADMIN)
+  @ApiOperation({ summary: 'Re-queue processing for a dataset whose file is already stored' })
+  reprocess(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthTokenPayload,
+    @CurrentOrgId() orgId: string,
+  ) {
+    return this.datasetsService.reprocess(id, orgId, user.sub);
+  }
+
   @Post(':id/generate-responses')
   @Roles(UserRole.ORG_ADMIN, UserRole.SUPER_ADMIN)
   @ApiOperation({ summary: 'Generate AI responses for dataset rows missing them' })

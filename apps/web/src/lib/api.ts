@@ -35,6 +35,15 @@ import { useAuthStore } from '@/store/auth-store';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api/v1';
 
+/** Default budget for JSON calls. */
+const DEFAULT_TIMEOUT_MS = 30000;
+
+/**
+ * Uploads need a longer budget: a 50MB file over a slow connection can take a
+ * while, and the API itself may still be cold-starting.
+ */
+const UPLOAD_TIMEOUT_MS = 180000;
+
 // Guard against concurrent refresh attempts — a single in-flight promise is
 // shared so multiple 401s racing each other only trigger one refresh call.
 let refreshPromise: Promise<string | null> | null = null;
@@ -86,11 +95,18 @@ async function refreshAccessToken(): Promise<string | null> {
   return refreshPromise;
 }
 
-async function request<T>(path: string, options: RequestInit = {}, _retry = true): Promise<T> {
+async function request<T>(
+  path: string,
+  options: RequestInit = {},
+  requestOptions: { retry?: boolean; timeoutMs?: number } = {},
+): Promise<T> {
+  const { retry = true, timeoutMs = DEFAULT_TIMEOUT_MS } = requestOptions;
   const { accessToken, clearSession } = useAuthStore.getState();
   const headers: Record<string, string> = {};
 
-  if (options.body) {
+  // FormData bodies must keep the browser-generated multipart boundary, so we
+  // only default to JSON for everything else.
+  if (options.body && !(options.body instanceof FormData)) {
     headers['Content-Type'] = 'application/json';
   }
 
@@ -104,12 +120,19 @@ async function request<T>(path: string, options: RequestInit = {}, _retry = true
 
   const url = `${API_URL}${path}`;
   const controller = new AbortController();
-  const timeoutMs = 30000;
   const id = setTimeout(() => controller.abort(), timeoutMs);
 
   let res: Response;
   try {
     res = await fetch(url, { ...options, headers, cache: 'no-store', signal: controller.signal });
+  } catch (err) {
+    // An aborted request (timeout) and a dropped connection both land here —
+    // surface something actionable instead of a bare "Failed to fetch", so the
+    // UI never shows a spinner that resolves to nothing.
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw new Error(`The server took longer than ${Math.round(timeoutMs / 1000)}s to respond.`);
+    }
+    throw err;
   } finally {
     clearTimeout(id);
   }
@@ -119,11 +142,11 @@ async function request<T>(path: string, options: RequestInit = {}, _retry = true
   if (res.status === 401) {
     // Only attempt refresh in the browser — during SSR there is no token so a
     // 401 is expected and we must not wipe the client's persisted session.
-    if (typeof window !== 'undefined' && _retry) {
+    if (typeof window !== 'undefined' && retry) {
       const newToken = await refreshAccessToken();
       if (newToken) {
         // Replay the original request with the fresh access token.
-        return request<T>(path, options, false);
+        return request<T>(path, options, { retry: false, timeoutMs });
       }
     } else if (typeof window !== 'undefined') {
       clearSession();
@@ -185,7 +208,12 @@ export const api = {
     });
   },
 
-  async register(data: { email: string; password: string; name: string; organizationName?: string }) {
+  async register(data: {
+    email: string;
+    password: string;
+    name: string;
+    organizationName?: string;
+  }) {
     return request<AuthResponse>('/auth/register', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -233,7 +261,10 @@ export const api = {
   },
 
   async updateOrganization(id: string, data: Record<string, unknown>) {
-    return request<Organization>(`/organizations/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+    return request<Organization>(`/organizations/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
   },
 
   async getMembers(orgId: string) {
@@ -241,7 +272,10 @@ export const api = {
   },
 
   async inviteMember(orgId: string, data: InviteMemberRequest) {
-    return request<Invitation>(`/organizations/${orgId}/invitations`, { method: 'POST', body: JSON.stringify(data) });
+    return request<Invitation>(`/organizations/${orgId}/invitations`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
   },
 
   async getInvitations(orgId: string) {
@@ -249,11 +283,15 @@ export const api = {
   },
 
   async resendInvitation(orgId: string, invitationId: string) {
-    return request<Invitation>(`/organizations/${orgId}/invitations/${invitationId}/resend`, { method: 'POST' });
+    return request<Invitation>(`/organizations/${orgId}/invitations/${invitationId}/resend`, {
+      method: 'POST',
+    });
   },
 
   async revokeInvitation(orgId: string, invitationId: string) {
-    return request<void>(`/organizations/${orgId}/invitations/${invitationId}`, { method: 'DELETE' });
+    return request<void>(`/organizations/${orgId}/invitations/${invitationId}`, {
+      method: 'DELETE',
+    });
   },
 
   async getInvitation(token: string) {
@@ -280,7 +318,10 @@ export const api = {
   },
 
   async changeMemberRole(orgId: string, userId: string, data: { role: string }) {
-    return request<void>(`/organizations/${orgId}/members/${userId}`, { method: 'PATCH', body: JSON.stringify(data) });
+    return request<void>(`/organizations/${orgId}/members/${userId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
   },
 
   // ── Users ─────────────────────────────────────────
@@ -313,26 +354,33 @@ export const api = {
     return request<Dataset>(`/datasets/${id}`);
   },
 
-  async createDataset(data: { name: string; format: string; description?: string; tags?: string[] }) {
+  async createDataset(data: {
+    name: string;
+    format: string;
+    description?: string;
+    tags?: string[];
+  }) {
     return request<Dataset>('/datasets', { method: 'POST', body: JSON.stringify(data) });
   },
 
   async uploadDatasetFile(id: string, file: File) {
-    const { accessToken } = useAuthStore.getState();
     const formData = new FormData();
     formData.append('file', file);
 
-    const res = await fetch(`${API_URL}/datasets/${id}/upload`, {
-      method: 'POST',
-      headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
-      body: formData,
-    });
+    return request<{ message: string; datasetId: string }>(
+      `/datasets/${id}/upload`,
+      {
+        method: 'POST',
+        body: formData,
+      },
+      { timeoutMs: UPLOAD_TIMEOUT_MS },
+    );
+  },
 
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      throw new Error(body.error?.message || `Upload failed: ${res.status}`);
-    }
-    return res.json();
+  async reprocessDataset(id: string) {
+    return request<{ message: string; datasetId: string }>(`/datasets/${id}/reprocess`, {
+      method: 'POST',
+    });
   },
 
   async getDatasetRows(id: string, params?: { page?: number; limit?: number }) {
@@ -354,7 +402,10 @@ export const api = {
   },
 
   async cloneDataset(id: string, name?: string) {
-    return request<Dataset>(`/datasets/${id}/clone`, { method: 'POST', body: JSON.stringify({ name }) });
+    return request<Dataset>(`/datasets/${id}/clone`, {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    });
   },
 
   async archiveDataset(id: string) {
@@ -439,7 +490,10 @@ export const api = {
     evaluatorIds?: string[];
     dueDate?: string;
   }) {
-    return request<EvaluationTask>('/evaluations/tasks', { method: 'POST', body: JSON.stringify(data) });
+    return request<EvaluationTask>('/evaluations/tasks', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
   },
 
   async activateTask(taskId: string) {
@@ -450,7 +504,10 @@ export const api = {
     return request<void>(`/evaluations/tasks/${taskId}/pause`, { method: 'PATCH' });
   },
 
-  async updateTask(taskId: string, data: { name?: string; description?: string; dueDate?: string }) {
+  async updateTask(
+    taskId: string,
+    data: { name?: string; description?: string; dueDate?: string },
+  ) {
     return request<EvaluationTask>(`/evaluations/tasks/${taskId}`, {
       method: 'PATCH',
       body: JSON.stringify(data),

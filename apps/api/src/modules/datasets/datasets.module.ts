@@ -5,6 +5,7 @@ import { memoryStorage } from 'multer';
 import { DatasetsController } from './datasets.controller';
 import { DatasetsService } from './datasets.service';
 import { DatasetProcessorService } from './dataset-processor.service';
+import { DatasetProcessingReaper } from './dataset-processing-reaper.service';
 import { StorageService } from '../../common/services/storage.service';
 import { AiModule } from '../ai/ai.module';
 import { QueueName } from '@scorra/types';
@@ -22,7 +23,7 @@ import { QueueName } from '@scorra/types';
     }),
   ],
   controllers: [DatasetsController],
-  providers: [DatasetsService, DatasetProcessorService, StorageService],
+  providers: [DatasetsService, DatasetProcessorService, DatasetProcessingReaper, StorageService],
   exports: [DatasetsService],
 })
 export class DatasetsModule {}

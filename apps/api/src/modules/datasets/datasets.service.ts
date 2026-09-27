@@ -3,6 +3,7 @@ import {
   NotFoundException,
   ForbiddenException,
   BadRequestException,
+  ServiceUnavailableException,
   Logger,
 } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bull';
@@ -29,6 +30,14 @@ import {
   rowPromptType,
   type ParsedRow,
 } from './dataset-parser';
+import { withTimeout } from '../../common/utils/promise.util';
+
+/**
+ * How long to wait for `Queue.add()` before treating the broker as down.
+ * Redis is either reachable (a round trip takes milliseconds) or it isn't —
+ * waiting longer only holds the upload request open.
+ */
+const QUEUE_ADD_TIMEOUT_MS = 10_000;
 
 @Injectable()
 export class DatasetsService {
@@ -81,37 +90,85 @@ export class DatasetsService {
     const fileUrl = await this.storage.upload(file.buffer, storageKey, file.mimetype);
 
     // Update dataset status immediately so the UI reflects progress.
-    // The queue job is best-effort — if Redis is down we log and continue;
-    // the file is still stored and the dataset is still usable.
     await this.prisma.dataset.update({
       where: { id: datasetId },
       data: { fileUrl, status: 'PROCESSING' },
     });
 
-    const jobData: DatasetProcessingJobData = {
+    await this.enqueueProcessing({
       datasetId,
       organizationId,
       fileUrl, // storage key — used by worker to download
       format: dataset.format,
       uploadedById: userId,
-    };
-
-    try {
-      await this.datasetQueue.add('process-dataset', jobData, {
-        attempts: 3,
-        backoff: { type: 'exponential', delay: 3000 },
-      });
-      this.logger.log(`Dataset ${datasetId} queued for processing`);
-    } catch (err) {
-      this.logger.error(`Failed to queue processing for dataset ${datasetId}: ${err}`);
-      // Non-blocking: mark as failed so the UI shows the error state,
-      // but don't throw — the file is already uploaded.
-      await this.prisma.dataset
-        .update({ where: { id: datasetId }, data: { status: 'FAILED' } })
-        .catch(() => undefined);
-    }
+    });
 
     return { message: 'File uploaded and queued for processing', datasetId };
+  }
+
+  /**
+   * Re-queue processing for a dataset whose file is already stored.
+   *
+   * Recovers datasets that were left at PROCESSING when the queue dropped the
+   * job (e.g. Redis unreachable mid-upload), and lets an admin retry a FAILED
+   * import without re-uploading. Safe to repeat: rows are keyed by
+   * `(datasetId, rowIndex)` and inserted with `skipDuplicates`.
+   */
+  async reprocess(id: string, organizationId: string, userId: string) {
+    const dataset = await this.findOneOrThrow(id, organizationId);
+
+    if (!dataset.fileUrl) {
+      throw new BadRequestException('This dataset has no stored file to process — import a file first');
+    }
+
+    await this.prisma.dataset.update({ where: { id }, data: { status: 'PROCESSING' } });
+
+    await this.enqueueProcessing({
+      datasetId: id,
+      organizationId,
+      fileUrl: dataset.fileUrl,
+      format: dataset.format,
+      uploadedById: userId,
+    });
+
+    return { message: 'Dataset processing queued', datasetId: id };
+  }
+
+  /**
+   * Add a dataset-processing job without ever hanging the caller.
+   *
+   * `Queue.add()` waits on the Redis connection, and with ioredis's default
+   * retry strategy an unreachable broker means the promise never settles —
+   * which used to leave the upload request (and the browser spinner) running
+   * forever while the dataset sat at PROCESSING. Bounding it turns that into a
+   * fast, explicit failure: the dataset is marked FAILED so nothing is stuck,
+   * and the caller returns a 503 the user can act on.
+   */
+  private async enqueueProcessing(data: DatasetProcessingJobData) {
+    const add = this.datasetQueue.add('process-dataset', data, {
+      attempts: 3,
+      backoff: { type: 'exponential', delay: 3000 },
+    });
+
+    try {
+      await withTimeout(
+        add,
+        QUEUE_ADD_TIMEOUT_MS,
+        `timed out after ${QUEUE_ADD_TIMEOUT_MS}ms waiting for the job queue`,
+      );
+      this.logger.log(`Dataset ${data.datasetId} queued for processing`);
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Failed to queue processing for dataset ${data.datasetId}: ${reason}`);
+
+      await this.prisma.dataset
+        .update({ where: { id: data.datasetId }, data: { status: 'FAILED' } })
+        .catch(() => undefined);
+
+      throw new ServiceUnavailableException(
+        'The file was uploaded but processing could not be queued — the job queue is unavailable. Retry processing from the dataset page.',
+      );
+    }
   }
 
   async findAll(organizationId: string, query: PaginationDto) {
