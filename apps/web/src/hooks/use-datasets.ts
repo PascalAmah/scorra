@@ -62,11 +62,28 @@ export function useCreateDataset() {
   });
 }
 
-export function useUploadDatasetFile(id: string) {
-  const { invalidateDataset } = useInvalidate();
+export function useUploadDatasetFile() {
+  const { invalidateDataset, invalidateDatasets } = useInvalidate();
   return useMutation({
-    mutationFn: (file: File) => api.uploadDatasetFile(id, file),
-    onSuccess: () => invalidateDataset(id),
+    // The target dataset is a variable rather than a hook argument: in create
+    // mode the id only exists once the dataset row is created, and a retry must
+    // import into that same dataset (and keep the button in its loading state).
+    mutationFn: ({ id, file }: { id: string; file: File }) => api.uploadDatasetFile(id, file),
+    onSuccess: (_result, { id }) => {
+      invalidateDataset(id);
+      invalidateDatasets();
+    },
+  });
+}
+
+export function useReprocessDataset(id: string) {
+  const { invalidateDataset, invalidateDatasets } = useInvalidate();
+  return useMutation({
+    mutationFn: () => api.reprocessDataset(id),
+    onSuccess: () => {
+      invalidateDataset(id);
+      invalidateDatasets();
+    },
   });
 }
 

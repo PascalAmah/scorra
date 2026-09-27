@@ -5,7 +5,11 @@ import { StorageService } from '../../common/services/storage.service';
 import { AiService } from '../ai/ai.service';
 import { getQueueToken } from '@nestjs/bull';
 import { QueueName, DatasetFormat } from '@scorra/types';
-import { NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { NotFoundException, ForbiddenException, BadRequestException, ServiceUnavailableException } from '@nestjs/common';
+
+/** Mirrors QUEUE_ADD_TIMEOUT_MS in datasets.service.ts. */
+const UPLOAD_QUEUE_TIMEOUT_MS = 10_000;
+
 
 describe('DatasetsService', () => {
   let service: DatasetsService;
@@ -90,7 +94,7 @@ describe('DatasetsService', () => {
       getUrl: jest.fn(),
     };
 
-    queue = { add: jest.fn() };
+    queue = { add: jest.fn().mockResolvedValue({ id: 'job-1' }) };
 
     aiService = {
       isGenerationConfigured: jest.fn().mockReturnValue(true),
@@ -211,6 +215,91 @@ describe('DatasetsService', () => {
       await expect(service.uploadFile('ds-1', orgId, userId, file)).rejects.toThrow(
         BadRequestException,
       );
+    });
+
+    it('should report a 503 and mark the dataset FAILED when the queue rejects the job', async () => {
+      prisma.dataset.findFirst.mockResolvedValue(mockDataset);
+      prisma.dataset.update.mockResolvedValue(mockDataset);
+      storage.upload.mockResolvedValue('datasets/ds-1/v1/test.csv');
+      queue.add.mockRejectedValue(new Error('ECONNREFUSED'));
+
+      // The file is uploaded, so the user needs a real error — not the old
+      // "queued for processing" success message with a dataset that never
+      // processes.
+      await expect(service.uploadFile('ds-1', orgId, userId, file)).rejects.toThrow(
+        ServiceUnavailableException,
+      );
+
+      // Crucially, nothing is left sitting at PROCESSING.
+      expect(prisma.dataset.update).toHaveBeenLastCalledWith({
+        where: { id: 'ds-1' },
+        data: { status: 'FAILED' },
+      });
+    });
+
+    it('should time out instead of hanging the request when the queue never answers', async () => {
+      jest.useFakeTimers();
+      try {
+        prisma.dataset.findFirst.mockResolvedValue(mockDataset);
+        prisma.dataset.update.mockResolvedValue(mockDataset);
+        storage.upload.mockResolvedValue('datasets/ds-1/v1/test.csv');
+        // Bull/ioredis retry forever against an unreachable broker, so this
+        // promise never settles.
+        queue.add.mockReturnValue(new Promise(() => undefined));
+
+        const pending = service.uploadFile('ds-1', orgId, userId, file);
+        const failure = expect(pending).rejects.toThrow(ServiceUnavailableException);
+        await jest.advanceTimersByTimeAsync(UPLOAD_QUEUE_TIMEOUT_MS + 1);
+        await failure;
+
+        expect(prisma.dataset.update).toHaveBeenLastCalledWith({
+          where: { id: 'ds-1' },
+          data: { status: 'FAILED' },
+        });
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+  });
+
+  describe('reprocess', () => {
+    it('should re-queue processing for a dataset stuck at PROCESSING', async () => {
+      prisma.dataset.findFirst.mockResolvedValue({ ...mockDataset, status: 'PROCESSING' });
+      prisma.dataset.update.mockResolvedValue(mockDataset);
+
+      const result = await service.reprocess('ds-1', orgId, userId);
+
+      expect(prisma.dataset.update).toHaveBeenCalledWith({
+        where: { id: 'ds-1' },
+        data: { status: 'PROCESSING' },
+      });
+      expect(queue.add).toHaveBeenCalledWith(
+        'process-dataset',
+        expect.objectContaining({ datasetId: 'ds-1', fileUrl: mockDataset.fileUrl }),
+        expect.any(Object),
+      );
+      expect(result.datasetId).toBe('ds-1');
+    });
+
+    it('should refuse to reprocess a dataset with no stored file', async () => {
+      prisma.dataset.findFirst.mockResolvedValue({ ...mockDataset, fileUrl: null });
+
+      await expect(service.reprocess('ds-1', orgId, userId)).rejects.toThrow(BadRequestException);
+      expect(queue.add).not.toHaveBeenCalled();
+    });
+
+    it('should mark the dataset FAILED when the queue is unavailable', async () => {
+      prisma.dataset.findFirst.mockResolvedValue({ ...mockDataset, status: 'PROCESSING' });
+      prisma.dataset.update.mockResolvedValue(mockDataset);
+      queue.add.mockRejectedValue(new Error('ECONNREFUSED'));
+
+      await expect(service.reprocess('ds-1', orgId, userId)).rejects.toThrow(
+        ServiceUnavailableException,
+      );
+      expect(prisma.dataset.update).toHaveBeenLastCalledWith({
+        where: { id: 'ds-1' },
+        data: { status: 'FAILED' },
+      });
     });
   });
 

@@ -7,7 +7,6 @@ import { CheckmarkCircle01Icon, Diamond01Icon, Upload01Icon } from 'hugeicons-re
 import { Button } from '@/components/ui/button';
 import { Stepper } from '@/components/ui/stepper';
 import { useCreateDataset, useUploadDatasetFile } from '@/hooks/use-datasets';
-import { api } from '@/lib/api';
 import { cn, formatNumber } from '@/lib/utils';
 
 type FileFormat = 'CSV' | 'JSON' | 'JSONL';
@@ -191,7 +190,12 @@ export function UploadWizard({ datasetId }: { datasetId?: string }) {
   const createMode = !datasetId;
 
   const createMutation = useCreateDataset();
-  const uploadMutation = useUploadDatasetFile(datasetId as string);
+  const uploadMutation = useUploadDatasetFile();
+  // In create mode the dataset row is created before the file is transferred.
+  // Remembering its id means a retry after a failed upload imports into the
+  // same dataset instead of silently creating a duplicate.
+  const [createdId, setCreatedId] = useState<string | null>(null);
+  const targetId = datasetId ?? createdId ?? undefined;
   const importing = createMutation.isPending || uploadMutation.isPending;
 
   const handleFile = async (selected: File | null) => {
@@ -229,18 +233,23 @@ export function UploadWizard({ datasetId }: { datasetId?: string }) {
     if (!parsed || !file) return;
     setError('');
     try {
-      if (createMode) {
-        const ds = (await createMutation.mutateAsync({
+      // The file transfer runs through the upload mutation (not a bare fetch
+      // call) so the button keeps showing "Importing…" for the whole transfer —
+      // it used to look idle mid-import in create mode.
+      let id = targetId;
+
+      if (!id) {
+        const created = (await createMutation.mutateAsync({
           name: name.trim() || parsed.fileName,
           format: parsed.format,
           description: description.trim() || undefined,
         })) as { id: string };
-        await api.uploadDatasetFile(ds.id, file);
-        router.push(`/datasets/${ds.id}`);
-      } else {
-        await uploadMutation.mutateAsync(file);
-        router.push(`/datasets/${datasetId}`);
+        id = created.id;
+        setCreatedId(id);
       }
+
+      await uploadMutation.mutateAsync({ id, file });
+      router.push(`/datasets/${id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Import failed');
     }
@@ -520,7 +529,7 @@ export function UploadWizard({ datasetId }: { datasetId?: string }) {
           )}
           {step === 2 && <Button onClick={() => setStep(3)}>Continue to review →</Button>}
           {step === 3 && (
-            <Button onClick={handleImport} disabled={importing || (createMode && !name.trim())}>
+            <Button onClick={handleImport} disabled={importing || (!targetId && !name.trim())}>
               {importing ? (
                 <>
                   <CheckmarkCircle01Icon size={14} className="animate-spin" />
@@ -528,6 +537,8 @@ export function UploadWizard({ datasetId }: { datasetId?: string }) {
                 </>
               ) : datasetId ? (
                 'Import new version'
+              ) : createdId ? (
+                'Retry import'
               ) : (
                 'Start import'
               )}
