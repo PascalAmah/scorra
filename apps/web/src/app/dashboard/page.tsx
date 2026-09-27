@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useAuthGuard } from '@/hooks/use-auth-guard';
 import Link from 'next/link';
 import { motion } from 'motion/react';
 import {
@@ -117,19 +118,15 @@ export default function DashboardPage() {
   const user = useAuthStore((s) => s.user);
   const isAdmin = isOrgAdmin(user);
 
-  const { data: orgs } = useOrganizations();
-  const hasOrg = (orgs ?? []).length > 0;
+  const { data: orgs, isPending: loadingOrgs, error: orgsError } = useOrganizations();
+  const hasOrg = Boolean(user) && (orgs ?? []).length > 0;
 
   useEffect(() => {
     const id = requestAnimationFrame(() => setMounted(true));
     return () => cancelAnimationFrame(id);
   }, []);
 
-  useEffect(() => {
-    if (mounted && !accessToken) {
-      router.replace('/login');
-    }
-  }, [mounted, accessToken, router]);
+  useAuthGuard();
 
   const taskRows = useMemo<TaskRow[]>(
     () =>
@@ -169,6 +166,39 @@ export default function DashboardPage() {
     );
   }
 
+  // Wait for the organizations query to settle before deciding whether the
+  // user genuinely has no org — checking before it resolves would flash a
+  // misleading "No organization access" state while the data is still
+  // loading.
+  if (loadingOrgs) {
+    return (
+      <AppShell>
+        <div className="flex h-[60vh] items-center justify-center">
+          <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-ink-400">
+            Loading…
+          </p>
+        </div>
+      </AppShell>
+    );
+  }
+
+  if (orgsError && !hasOrg) {
+    return (
+      <AppShell>
+        <div className="flex h-[60vh] flex-col items-center justify-center gap-4 px-6 text-center">
+          <p className="text-[15px] font-semibold text-ink">Couldn&apos;t load your workspace</p>
+          <p className="max-w-sm text-[13px] text-ink-500">
+            We couldn&apos;t reach the server to load your organizations. Check your
+            connection and try again.
+          </p>
+          <Button variant="ghost" onClick={() => window.location.reload()}>
+            Retry
+          </Button>
+        </div>
+      </AppShell>
+    );
+  }
+
   if (!hasOrg) {
     return (
       <AppShell>
@@ -194,6 +224,14 @@ export default function DashboardPage() {
 
   const avgScore = summary?.averageScoreThisMonth;
   const hallucinationRate = summary?.hallucinationRateThisMonth;
+
+  // Evaluator overview — derived from the user's own task list, no extra API calls.
+  const inProgress = taskRows.filter((t) => t.pct > 0 && t.pct < 100).length;
+  const completed = taskRows.filter((t) => t.pct >= 100).length;
+  const overallPct =
+    taskRows.length > 0
+      ? Math.round(taskRows.reduce((sum, t) => sum + t.pct, 0) / taskRows.length)
+      : 0;
 
   return (
     <AppShell>
@@ -325,8 +363,52 @@ export default function DashboardPage() {
         ) : (
           /* Evaluator view */
           <div>
-            {taskRows.length === 0 ? (
-              <Panel title="My tasks">
+            <motion.div
+              variants={CONTAINER}
+              initial="hidden"
+              animate="show"
+              className="grid grid-cols-2 gap-4 lg:grid-cols-4"
+            >
+              <motion.div variants={ITEM}>
+                <StatCard
+                  label="Assigned tasks"
+                  value={formatNumber(taskRows.length)}
+                  delta="assigned to you"
+                  up={taskRows.length > 0}
+                />
+              </motion.div>
+              <motion.div variants={ITEM}>
+                <StatCard
+                  label="In progress"
+                  value={formatNumber(inProgress)}
+                  delta="started, not finished"
+                  up={inProgress > 0}
+                />
+              </motion.div>
+              <motion.div variants={ITEM}>
+                <StatCard
+                  label="Completed"
+                  value={formatNumber(completed)}
+                  delta="fully scored by you"
+                  up={completed > 0}
+                />
+              </motion.div>
+              <motion.div variants={ITEM}>
+                <StatCard
+                  label="Overall progress"
+                  value={`${overallPct}%`}
+                  delta="across your tasks"
+                  up={overallPct > 0}
+                />
+              </motion.div>
+            </motion.div>
+
+            <Panel
+              title="Your queue"
+              action={<ViewAll href="/tasks" label="View all tasks" />}
+              className="mt-5"
+            >
+              {taskRows.length === 0 ? (
                 <div className="py-8 text-center">
                   <Target01Icon size={32} className="mx-auto mb-3 text-ink-300" />
                   <p className="text-[14px] font-semibold text-ink">No assigned tasks</p>
@@ -334,62 +416,62 @@ export default function DashboardPage() {
                     You haven&apos;t been assigned to any evaluation tasks yet.
                   </p>
                 </div>
-              </Panel>
-            ) : (
-              <ul className="space-y-3">
-                {taskRows.map((task) => (
-                  <li key={task.id}>
-                    <Link
-                      href={`/tasks/${task.id}`}
-                      className="flex items-center gap-4 rounded-2xl border border-ink-200 bg-white p-5 transition-colors hover:border-ink-400"
-                    >
-                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[9px] border border-ink-200 bg-paper">
-                        <task.icon size={18} className="text-ink" />
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="truncate text-[14.5px] font-semibold text-ink">
-                            {task.title}
-                          </p>
-                          <Badge variant={task.badge.solid ? 'solid' : 'outline'}>
-                            {task.badge.label}
-                          </Badge>
-                        </div>
-                        <p className="mt-1 truncate font-mono text-[11.5px] text-ink-500">
-                          {task.sub}
-                        </p>
-                        <div className="mt-2 flex items-center gap-3">
-                          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-ink-200">
-                            <div
-                              className="h-full rounded-full bg-ink transition-all"
-                              style={{ width: `${task.pct}%` }}
-                            />
+              ) : (
+                <ul className="space-y-3">
+                  {taskRows.map((task) => (
+                    <li key={task.id}>
+                      <Link
+                        href={`/tasks/${task.id}`}
+                        className="flex items-center gap-4 rounded-2xl border border-ink-200 bg-white p-5 transition-colors hover:border-ink-400"
+                      >
+                        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[9px] border border-ink-200 bg-paper">
+                          <task.icon size={18} className="text-ink" />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="truncate text-[14.5px] font-semibold text-ink">
+                              {task.title}
+                            </p>
+                            <Badge variant={task.badge.solid ? 'solid' : 'outline'}>
+                              {task.badge.label}
+                            </Badge>
                           </div>
-                          <span className="font-mono text-[11px] text-ink-500">{task.pct}%</span>
+                          <p className="mt-1 truncate font-mono text-[11.5px] text-ink-500">
+                            {task.sub}
+                          </p>
+                          <div className="mt-2 flex items-center gap-3">
+                            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-ink-200">
+                              <div
+                                className="h-full rounded-full bg-ink transition-all"
+                                style={{ width: `${task.pct}%` }}
+                              />
+                            </div>
+                            <span className="font-mono text-[11px] text-ink-500">{task.pct}%</span>
+                          </div>
                         </div>
-                      </div>
-                      {task.badge.label === 'ACTIVE' && (
-                        <Button
-                          size="sm"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            router.push(
-                              task.type === 'PAIRWISE'
-                                ? `/compare/${task.id}`
-                                : task.type === 'RANKING'
-                                  ? `/rank/${task.id}`
-                                  : `/evaluate/${task.id}`,
-                            );
-                          }}
-                        >
-                          {task.pct > 0 ? 'Continue' : 'Start'}
-                        </Button>
-                      )}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
+                        {task.badge.label === 'ACTIVE' && (
+                          <Button
+                            size="sm"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              router.push(
+                                task.type === 'PAIRWISE'
+                                  ? `/compare/${task.id}`
+                                  : task.type === 'RANKING'
+                                    ? `/rank/${task.id}`
+                                    : `/evaluate/${task.id}`,
+                              );
+                            }}
+                          >
+                            {task.pct > 0 ? 'Continue' : 'Start'}
+                          </Button>
+                        )}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Panel>
           </div>
         )}
       </div>

@@ -18,6 +18,7 @@ import {
   useGenerateDatasetResponses,
   useUpdateDataset,
 } from '@/hooks/use-datasets';
+import { useAuthGuard } from '@/hooks/use-auth-guard';
 import { api } from '@/lib/api';
 import type { Dataset, DatasetRow, Pagination } from '@scorra/types';
 import { cn, formatDate, formatNumber } from '@/lib/utils';
@@ -58,12 +59,7 @@ export default function DatasetDetailPage() {
 
   const cloneMutation = useCloneDataset(id);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (!api.isAuthenticated) {
-      router.replace('/login');
-    }
-  }, [router]);
+  useAuthGuard();
 
   const filteredRows = useMemo(() => {
     const q = query.trim().toLowerCase();

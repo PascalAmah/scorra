@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { useAuthStore } from '@/store/auth-store';
 import { useInvitation, useOrganizations } from '@/hooks/use-organization';
 import { api } from '@/lib/api';
+import { establishSessionMarker } from '@/lib/session-cookie';
 
 const ROLE_LABELS: Record<string, string> = {
   EVALUATOR: 'Evaluator',
@@ -93,9 +94,10 @@ function AcceptInvitationContent() {
 
       await api.acceptInvitation(token);
 
-      // Refresh tokens to get the org-specific role
       const session = await api.switchOrg(invitation.organizationId);
       setSession(session);
+
+      await establishSessionMarker();
 
       router.push('/dashboard');
     } catch (err) {

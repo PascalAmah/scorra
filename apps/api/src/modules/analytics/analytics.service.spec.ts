@@ -1,11 +1,21 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getQueueToken } from '@nestjs/bull';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { NotFoundException } from '@nestjs/common';
 import { AnalyticsService } from './analytics.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { QueueName } from '@scorra/types';
 
 const analyticsQueue = { add: jest.fn() };
+// Minimal functional cache mock (cache-manager v5 interface) so the
+// "caches the result across calls" test exercises real hit/miss behaviour.
+const cacheStore = new Map<string, unknown>();
+const cacheMock = {
+  get: jest.fn(async (key: string) => cacheStore.get(key)),
+  set: jest.fn(async (key: string, value: unknown) => {
+    cacheStore.set(key, value);
+  }),
+};
 
 function prismaMock() {
   return {
@@ -40,6 +50,7 @@ describe('AnalyticsService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    cacheStore.clear();
     prisma = prismaMock();
 
     const module: TestingModule = await Test.createTestingModule({
@@ -47,6 +58,7 @@ describe('AnalyticsService', () => {
         AnalyticsService,
         { provide: PrismaService, useValue: prisma },
         { provide: getQueueToken(QueueName.ANALYTICS_COMPUTATION), useValue: analyticsQueue },
+        { provide: CACHE_MANAGER, useValue: cacheMock },
       ],
     }).compile();
 

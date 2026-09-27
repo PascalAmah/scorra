@@ -30,6 +30,7 @@ import {
   User,
 } from '@scorra/types';
 
+import { establishSessionMarker } from '@/lib/session-cookie';
 import { useAuthStore } from '@/store/auth-store';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api/v1';
@@ -62,9 +63,17 @@ async function refreshAccessToken(): Promise<string | null> {
       }
 
       const data = await res.json();
-      // The refresh endpoint returns { accessToken, refreshToken } (and
-      // optionally the full AuthResponse shape). Persist whatever we get.
-      setSession(data);
+      // The refresh endpoint returns { accessToken, refreshToken } without a
+      // user — merge over the existing session so `user` is not clobbered with
+      // undefined (which would log the user out on the next page load).
+      const prev = useAuthStore.getState();
+      setSession({
+        accessToken: data.accessToken,
+        refreshToken: data.refreshToken,
+        user: data.user ?? prev.user,
+      });
+      // Re-arm the middleware marker so long-lived sessions aren't bounced.
+      void establishSessionMarker();
       return data.accessToken as string;
     } catch {
       useAuthStore.getState().clearSession();
@@ -94,7 +103,18 @@ async function request<T>(path: string, options: RequestInit = {}, _retry = true
   }
 
   const url = `${API_URL}${path}`;
-  const res = await fetch(url, { ...options, headers, cache: 'no-store' });
+  const controller = new AbortController();
+  const timeoutMs = 30000;
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+
+  let res: Response;
+  try {
+    res = await fetch(url, { ...options, headers, cache: 'no-store', signal: controller.signal });
+  } finally {
+    clearTimeout(id);
+  }
+
+  if (res.status === 204) return undefined as T;
 
   if (res.status === 401) {
     // Only attempt refresh in the browser — during SSR there is no token so a
@@ -111,13 +131,45 @@ async function request<T>(path: string, options: RequestInit = {}, _retry = true
     throw new Error('Unauthorized');
   }
 
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.error?.message || `Request failed: ${res.status}`);
+  // Parse the response body — some endpoints (e.g. 201 created) may return
+  // an empty body or a non-JSON payload, so we guard against parse failures.
+  if (res.headers.get('content-length') === '0') {
+    return undefined as T;
   }
 
-  if (res.status === 204) return undefined as T;
-  return res.json();
+  let body: unknown;
+  const contentType = res.headers.get('content-type');
+  if (contentType?.includes('application/json')) {
+    try {
+      body = await res.json();
+    } catch {
+      throw new Error(`Request failed: ${res.status} (invalid JSON response)`);
+    }
+  } else {
+    // Non-JSON response — return the raw text for debugging.
+    body = await res.text();
+  }
+
+  if (!res.ok) {
+    const errBody = body as Record<string, unknown> | string;
+    let message: string;
+    if (typeof errBody === 'object' && errBody !== null) {
+      const obj = errBody as Record<string, unknown>;
+      message =
+        (obj.error && typeof obj.error === 'object' && 'message' in obj.error
+          ? String((obj.error as Record<string, unknown>).message)
+          : undefined) ||
+        (typeof obj.message === 'string' ? obj.message : undefined) ||
+        `Request failed: ${res.status}`;
+    } else if (typeof errBody === 'string') {
+      message = errBody;
+    } else {
+      message = `Request failed: ${res.status}`;
+    }
+    throw new Error(message);
+  }
+
+  return body as T;
 }
 
 export const api = {
@@ -155,6 +207,20 @@ export const api = {
       body: JSON.stringify({ refreshToken: token }),
     });
     useAuthStore.getState().clearSession();
+  },
+
+  async forgotPassword(email: string) {
+    return request<{ message: string }>('/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  },
+
+  async resetPassword(token: string, newPassword: string) {
+    return request<{ message: string }>('/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ token, newPassword }),
+    });
   },
 
   // ── Organizations ─────────────────────────────────

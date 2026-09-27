@@ -21,10 +21,10 @@ import {
   useTaskResults,
   useTaskScores,
 } from '@/hooks/use-tasks';
-import { useAuthStore } from '@/store/auth-store';
+import { useAdminGuard } from '@/hooks/use-admin-guard';
+import { useAuthGuard } from '@/hooks/use-auth-guard';
 import { api } from '@/lib/api';
 import { cn, formatRelativeTime } from '@/lib/utils';
-import { isOrgAdmin } from '@/lib/permissions';
 import { VERDICT_BADGE, verdictLabel } from '@/lib/task-utils';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -64,9 +64,7 @@ interface AggregatedItem {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function majorityVerdict(
-  votes: Array<ComparisonVerdict | null>,
-): ComparisonVerdict | null {
+function majorityVerdict(votes: Array<ComparisonVerdict | null>): ComparisonVerdict | null {
   const counts: Record<string, number> = {};
   for (const v of votes) {
     if (v) counts[v] = (counts[v] ?? 0) + 1;
@@ -125,8 +123,7 @@ export default function TaskResultsPage() {
   const [error, setError] = useState('');
   const [exporting, setExporting] = useState('');
 
-  const user = useAuthStore((s) => s.user);
-  const isAdmin = isOrgAdmin(user);
+  const isAdmin = useAdminGuard(`/tasks/${taskId}`);
 
   const { data: task, isPending } = useTask(taskId);
   const { data: resultsData } = useTaskResults(taskId, { limit: 500 });
@@ -135,13 +132,15 @@ export default function TaskResultsPage() {
   const { data: scores } = useTaskScores(taskId);
 
   // Reset to page 1 whenever search/filter changes
-  useEffect(() => { setPairPage(1); }, [search, filter]);
-  useEffect(() => { setSinglePage(1); setRankPage(1); }, [search]);
-
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (!api.isAuthenticated) router.replace('/login');
-  }, [router]);
+    setPairPage(1);
+  }, [search, filter]);
+  useEffect(() => {
+    setSinglePage(1);
+    setRankPage(1);
+  }, [search]);
+
+  useAuthGuard();
 
   const isPairwise = task?.type === 'PAIRWISE';
   const evaluations = useMemo(() => resultsData?.data ?? [], [resultsData]);
@@ -163,18 +162,14 @@ export default function TaskResultsPage() {
     return (
       <AppShell>
         <div className="flex h-[60vh] items-center justify-center">
-          <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-ink-400">
-            Loading…
-          </p>
+          <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-ink-400">Loading…</p>
         </div>
       </AppShell>
     );
   }
 
-  if (!isAdmin) {
-    router.replace(`/tasks/${taskId}`);
-    return null;
-  }
+  // Non-admins were already redirected to the task page by useAdminGuard.
+  if (!isAdmin) return null;
 
   const actions = (
     <>
@@ -333,12 +328,7 @@ function PairwiseResults({
       </section>
 
       {/* Toolbar */}
-      <PairToolbar
-        search={search}
-        setSearch={setSearch}
-        filter={filter}
-        setFilter={setFilter}
-      />
+      <PairToolbar search={search} setSearch={setSearch} filter={filter} setFilter={setFilter} />
 
       {/* Table */}
       <div className="overflow-hidden rounded-2xl border border-ink-200 bg-white">
@@ -348,15 +338,12 @@ function PairwiseResults({
           </p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
+            <table className="w-full border-collapse min-w-[640px]">
               <thead>
                 <tr className="border-b border-ink-200 bg-paper font-mono text-[10.5px] uppercase tracking-[0.06em] text-ink-500">
                   {['Item', 'Prompt', 'Votes', 'Final verdict', 'AI Judge', 'Agreement', ''].map(
                     (h, i) => (
-                      <th
-                        key={i}
-                        className={cn('px-5 py-3.5 text-left', i === 6 && 'w-10')}
-                      >
+                      <th key={i} className={cn('px-5 py-3.5 text-left', i === 6 && 'w-10')}>
                         {h}
                       </th>
                     ),
@@ -459,9 +446,7 @@ function PairwiseRow({
         ) : item.unanimous ? (
           <span className="text-ink-500">Unanimous</span>
         ) : item.disagreements === 1 ? (
-          <span className="font-semibold text-ink">
-            ⚠ Judge disagreed
-          </span>
+          <span className="font-semibold text-ink">⚠ Judge disagreed</span>
         ) : (
           <span className="font-semibold text-ink">
             ⚠ {item.disagreements} evaluators disagreed
@@ -599,9 +584,7 @@ function aggregateRankings(rankings: RankingResultItem[]): AggregatedRanking[] {
     const max = Math.max(0, ...counts.values());
     item.totalVotes = item.submissions.length;
     item.winnerCount = max;
-    item.winners = [...counts.entries()]
-      .filter(([, n]) => n === max)
-      .map(([name]) => name);
+    item.winners = [...counts.entries()].filter(([, n]) => n === max).map(([name]) => name);
     item.unanimous =
       item.totalVotes > 0 && item.winners.length === 1 && item.winnerCount === item.totalVotes;
     item.disagreements = item.totalVotes - item.winnerCount;
@@ -733,7 +716,7 @@ function RankingResults({
           </p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
+            <table className="w-full border-collapse min-w-[640px]">
               <thead>
                 <tr className="border-b border-ink-200 bg-paper font-mono text-[10.5px] uppercase tracking-[0.06em] text-ink-500">
                   {['Item', 'Prompt', 'Winner', 'Rankings', 'Agreement', ''].map((h, i) => (
@@ -820,10 +803,7 @@ function RankingRow({
       <td className="px-5 py-3.5">
         <div className="space-y-1.5">
           {item.submissions.map((s) => (
-            <div
-              key={s.id}
-              className="flex items-center gap-2 font-mono text-[11px] text-ink-500"
-            >
+            <div key={s.id} className="flex items-center gap-2 font-mono text-[11px] text-ink-500">
               <span className="shrink-0 text-ink-400">{s.evaluatorName}:</span>
               <span className="flex flex-wrap items-center gap-1">
                 {s.order.map((e, i) => (
@@ -849,9 +829,7 @@ function RankingRow({
         ) : item.disagreements === 1 ? (
           <span className="font-semibold text-ink">⚠ Judge disagreed</span>
         ) : (
-          <span className="font-semibold text-ink">
-            ⚠ {item.disagreements} judges disagreed
-          </span>
+          <span className="font-semibold text-ink">⚠ {item.disagreements} judges disagreed</span>
         )}
       </td>
 
@@ -953,21 +931,16 @@ function SingleResults({
       <div className="overflow-hidden rounded-2xl border border-ink-200 bg-white">
         {pageItems.length === 0 ? (
           <p className="px-6 py-14 text-center font-mono text-[11.5px] text-ink-400">
-            {evaluations.length === 0
-              ? 'No submissions yet.'
-              : 'No results match your search.'}
+            {evaluations.length === 0 ? 'No submissions yet.' : 'No results match your search.'}
           </p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
+            <table className="w-full border-collapse min-w-[640px]">
               <thead>
                 <tr className="border-b border-ink-200 bg-paper font-mono text-[10.5px] uppercase tracking-[0.06em] text-ink-500">
                   {['Item', 'Prompt', 'Evaluator', 'Score', 'Status', 'Submitted', ''].map(
                     (h, i) => (
-                      <th
-                        key={i}
-                        className={cn('px-5 py-3.5 text-left', i === 6 && 'w-10')}
-                      >
+                      <th key={i} className={cn('px-5 py-3.5 text-left', i === 6 && 'w-10')}>
                         {h}
                       </th>
                     ),
@@ -1075,11 +1048,7 @@ function TablePagination({
       </span>
       <div className="flex items-center gap-1.5">
         {/* Prev arrow */}
-        <PageBtn
-          label="←"
-          disabled={page === 1}
-          onClick={() => onPageChange(page - 1)}
-        />
+        <PageBtn label="←" disabled={page === 1} onClick={() => onPageChange(page - 1)} />
 
         {pages.map((p, i) =>
           p === '…' ? (
@@ -1100,11 +1069,7 @@ function TablePagination({
         )}
 
         {/* Next arrow */}
-        <PageBtn
-          label="→"
-          disabled={page === totalPages}
-          onClick={() => onPageChange(page + 1)}
-        />
+        <PageBtn label="→" disabled={page === totalPages} onClick={() => onPageChange(page + 1)} />
       </div>
     </div>
   );

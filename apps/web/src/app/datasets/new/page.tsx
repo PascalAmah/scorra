@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { AppShell } from '@/components/dashboard/shell';
 import { Topbar } from '@/components/dashboard/topbar';
 import { UploadWizard } from '@/components/datasets/upload-wizard';
-import { api } from '@/lib/api';
+import { useAuthGuard } from '@/hooks/use-auth-guard';
 
 export default function NewDatasetPage() {
   return (
@@ -30,13 +30,9 @@ function Wizard() {
     return () => cancelAnimationFrame(id);
   }, []);
 
-  useEffect(() => {
-    if (mounted && !api.isAuthenticated) {
-      router.replace('/login');
-    }
-  }, [mounted, router]);
+  useAuthGuard();
 
-  if (!mounted || !api.isAuthenticated) {
+  if (!mounted) {
     return (
       <div className="flex h-[50vh] items-center justify-center">
         <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-ink-400">

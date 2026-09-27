@@ -1,7 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { Target01Icon } from 'hugeicons-react';
 import type { EvaluationTask } from '@scorra/types';
@@ -13,7 +12,7 @@ import { SearchFilterBar } from '@/components/ui/search-filter-bar';
 import { useTasks } from '@/hooks/use-tasks';
 import { useUsers } from '@/hooks/use-users';
 import { useAuthStore } from '@/store/auth-store';
-import { api } from '@/lib/api';
+import { useAuthGuard } from '@/hooks/use-auth-guard';
 import { formatNumber } from '@/lib/utils';
 import { TYPE_LABELS, initialsOf, progressOf } from '@/lib/task-utils';
 import { isOrgAdmin } from '@/lib/permissions';
@@ -22,7 +21,6 @@ import { TaskStatusBadge } from '@/components/tasks/task-status-badge';
 const FILTERS = ['ALL', 'ACTIVE', 'DRAFT', 'COMPLETED'] as const;
 
 export default function TasksPage() {
-  const router = useRouter();
   const [search, setSearch] = useState('');
   const [appliedSearch, setAppliedSearch] = useState('');
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>('ALL');
@@ -37,12 +35,7 @@ export default function TasksPage() {
 
   const userById = useMemo(() => new Map(members.map((m) => [m.userId, m.user])), [members]);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (!api.isAuthenticated) {
-      router.replace('/login');
-    }
-  }, [router]);
+  useAuthGuard();
 
   const visible = useMemo(
     () => (filter === 'ALL' ? tasks : tasks.filter((t) => t.status === filter)),
@@ -85,11 +78,15 @@ export default function TasksPage() {
           </div>
         ) : visible.length === 0 ? (
           <div className="rounded-2xl border border-ink-200 bg-white px-8 py-16 text-center">
-            <p className="mb-2 text-[15px] font-semibold text-ink">No evaluation tasks yet</p>
-            <p className="mb-5 text-[13px] text-ink-500">
-              Create a task to score, compare, or rank model responses against a dataset.
+            <p className="mb-2 text-[15px] font-semibold text-ink">
+              {isAdmin ? 'No evaluation tasks yet' : 'No tasks assigned to you'}
             </p>
-            {tasks.length === 0 && (
+            <p className="mb-5 text-[13px] text-ink-500">
+              {isAdmin
+                ? 'Create a task to score, compare, or rank model responses against a dataset.'
+                : 'Tasks you are assigned to will appear here. Ask an admin to assign you to one.'}
+            </p>
+            {isAdmin && tasks.length === 0 && (
               <Button asChild>
                 <Link href="/tasks/new">+ New task</Link>
               </Button>

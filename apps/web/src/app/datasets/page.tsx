@@ -27,7 +27,7 @@ import {
   useDatasets,
   useDeleteDataset,
 } from '@/hooks/use-datasets';
-import { api } from '@/lib/api';
+import { useAuthGuard } from '@/hooks/use-auth-guard';
 import { cn, formatNumber, formatRelativeTime } from '@/lib/utils';
 
 const FILTERS = ['ALL', 'READY', 'PROCESSING', 'FAILED'] as const;
@@ -55,12 +55,7 @@ export default function DatasetsPage() {
   const datasets = useMemo(() => data?.data ?? [], [data]);
   const pagination = useMemo(() => data?.pagination ?? null, [data]);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (!api.isAuthenticated) {
-      router.replace('/login');
-    }
-  }, [router]);
+  useAuthGuard();
 
   const visible = useMemo(
     () => (filter === 'ALL' ? datasets : datasets.filter((d) => d.status === filter)),

@@ -282,10 +282,17 @@ export class EvaluationsService {
       organizationId: evaluation.task.organizationId,
     };
 
-    await this.aiEvalQueue.add('ai-evaluate', jobData, {
-      priority: 1,
-      attempts: 2,
-    });
+    try {
+      await this.aiEvalQueue.add('ai-evaluate', jobData, {
+        priority: 1,
+        attempts: 2,
+      });
+      this.logger.log(`AI evaluation job queued for evaluation ${evaluationId}`);
+    } catch (err) {
+      this.logger.error(`Failed to queue AI evaluation for evaluation ${evaluationId}: ${err}`);
+      // Non-blocking: return success anyway so the UI isn't stuck.
+      // The AI suggestions won't be generated, but the evaluation is saved.
+    }
 
     return { message: 'AI suggestions requested', evaluationId };
   }

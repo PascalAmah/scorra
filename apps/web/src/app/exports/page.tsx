@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 import { AppShell } from '@/components/dashboard/shell';
@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { SearchFilterBar } from '@/components/ui/search-filter-bar';
 import { useTasks } from '@/hooks/use-tasks';
 import { useExports, useRequestExport } from '@/hooks/use-exports';
+import { useAuthGuard } from '@/hooks/use-auth-guard';
 import { api } from '@/lib/api';
 import { cn, formatBytes, formatNumber, formatRelativeTime } from '@/lib/utils';
 
@@ -43,12 +44,7 @@ export default function ExportsPage() {
   const requestExport = useRequestExport();
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (!api.isAuthenticated) {
-      router.replace('/login');
-    }
-  }, [router]);
+  useAuthGuard();
 
   const readyCount = useMemo(() => list.filter((e) => e.status === 'READY').length, [list]);
 
@@ -225,9 +221,9 @@ export default function ExportsPage() {
             </p>
           </div>
         ) : (
-          <div className="overflow-hidden rounded-2xl border border-ink-200 bg-white">
+          <div className="overflow-x-auto rounded-2xl border border-ink-200 bg-white">
             <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-[13.5px]">
+              <table className="w-full border-collapse text-[13.5px] min-w-[640px]">
                 <thead>
                   <tr className="border-b border-ink-200 bg-paper text-left font-mono text-[10.5px] uppercase tracking-[0.06em] text-ink-500">
                     <th className="px-5 py-3.5">Export</th>

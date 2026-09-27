@@ -6,7 +6,6 @@ import helmet from 'helmet';
 import compression = require('compression');
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
-//import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 
 async function bootstrap() {
@@ -23,9 +22,20 @@ async function bootstrap() {
   app.use(helmet());
   app.use(compression());
 
-  // CORS
+  const allowedOrigins = new Set<string>([
+    frontendUrl,
+    'http://localhost:3000',
+    'https://scorra-web-gray.vercel.app',
+  ]);
+
   app.enableCors({
-    origin: [frontendUrl, 'http://localhost:3000'],
+    origin: (origin, callback) => {
+      if (origin == null || allowedOrigins.has(origin)) {
+        callback(null, true);
+      } else {
+        callback(null, false);
+      }
+    },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key'],
   });
@@ -63,10 +73,7 @@ async function bootstrap() {
       .setTitle('Scorra API')
       .setDescription('AI Evaluation Platform — Production-grade API')
       .setVersion('1.0')
-      .addBearerAuth(
-        { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
-        'JWT',
-      )
+      .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'JWT' }, 'JWT')
       .addApiKey({ type: 'apiKey', name: 'X-API-Key', in: 'header' }, 'API-Key')
       .addTag('auth', 'Authentication & authorization')
       .addTag('organizations', 'Organization management')

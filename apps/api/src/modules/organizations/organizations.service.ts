@@ -47,7 +47,8 @@ export class OrganizationsService {
         data: {
           name: dto.name,
           slug,
-          plan: dto.plan ?? 'FREE',
+          // Plan is a server-side concern (billing/upgrades), never client-controlled.
+          plan: 'FREE',
         },
       });
 
@@ -153,7 +154,10 @@ export class OrganizationsService {
       },
     });
 
-    // Enqueue the invitation email — fire-and-forget via the queue
+    // Enqueue the invitation email — fire-and-forget via the queue.
+    // If the queue is unavailable we still return the invitation so the
+    // frontend isn't left waiting; the email will be retried by the
+    // worker when Redis recovers.
     const jobData: InvitationEmailJobData = {
       to: invitation.email,
       invitedByName: inviter?.name ?? 'Someone',
@@ -162,7 +166,13 @@ export class OrganizationsService {
       invitationToken: invitation.token,
       expiresAt: expiresAt.toISOString(),
     };
-    await this.emailQueue.add('send-invitation', jobData, { attempts: 3, backoff: { type: 'exponential', delay: 5000 } });
+    try {
+      await this.emailQueue.add('send-invitation', jobData, { attempts: 3, backoff: { type: 'exponential', delay: 5000 } });
+    } catch (queueError) {
+      this.logger.error(`Failed to queue invitation email for ${dto.email}: ${queueError}`);
+      // Non-blocking: the invitation is already created, so we return it
+      // regardless of whether the email was queued.
+    }
 
     this.logger.log(`Invitation queued for ${dto.email} in org ${orgId}`);
     return invitation;
@@ -198,6 +208,21 @@ export class OrganizationsService {
     if (invitation.expiresAt < new Date()) throw new ForbiddenException('Invitation has expired');
     if (invitation.acceptedAt) throw new ConflictException('Invitation already accepted');
 
+    // Invitations are email-bound: only the invited account may accept them.
+    // Without this check, anyone who obtains a pending invitation's token
+    // (e.g. from a forwarded link) could self-join the organization with the
+    // invitation's role — including ORG_ADMIN.
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true },
+    });
+    if (!user) throw new NotFoundException('User not found');
+    if (user.email.toLowerCase() !== invitation.email) {
+      throw new ForbiddenException(
+        `This invitation was sent to ${invitation.email}. Sign in with that account to accept it.`,
+      );
+    }
+
     const existingMember = await this.prisma.organizationMember.findFirst({
       where: { userId, organizationId: invitation.organizationId },
     });
@@ -221,7 +246,15 @@ export class OrganizationsService {
     return { message: 'Invitation accepted', organizationId: invitation.organizationId };
   }
 
-  async listInvitations(orgId: string, _userId: string) {
+  async listInvitations(orgId: string, userId: string) {
+    // Defense in depth: the route is already @Roles(ORG_ADMIN) — this guard
+    // re-verifies membership + role against the database, so a stale JWT
+    // organizationRole can never list another org's invitations.
+    await this.ensureOrgAdmin(orgId, userId);
+
+    // Note: `token` is deliberately NOT returned here. The invitation token is
+    // a bearer credential for self-joining the org; it is only ever sent to
+    // the invited email address (and to the admin in the invite() response).
     return this.prisma.invitation.findMany({
       where: { organizationId: orgId, acceptedAt: null },
       orderBy: { createdAt: 'desc' },
@@ -230,7 +263,6 @@ export class OrganizationsService {
         email: true,
         organizationId: true,
         role: true,
-        token: true,
         expiresAt: true,
         acceptedAt: true,
         createdById: true,
@@ -262,7 +294,7 @@ export class OrganizationsService {
       data: { token: this.generateToken(), expiresAt, createdAt: new Date(), createdById: userId },
     });
 
-    // Enqueue the resend email
+    // Enqueue the resend email — same non-blocking approach as invite()
     const jobData: InvitationEmailJobData = {
       to: updated.email,
       invitedByName: inviter?.name ?? 'Someone',
@@ -271,7 +303,11 @@ export class OrganizationsService {
       invitationToken: updated.token,
       expiresAt: expiresAt.toISOString(),
     };
-    await this.emailQueue.add('send-invitation', jobData, { attempts: 3, backoff: { type: 'exponential', delay: 5000 } });
+    try {
+      await this.emailQueue.add('send-invitation', jobData, { attempts: 3, backoff: { type: 'exponential', delay: 5000 } });
+    } catch (queueError) {
+      this.logger.error(`Failed to queue resend email for ${invitation.email}: ${queueError}`);
+    }
 
     this.logger.log(`Invitation ${invitation.id} resent to ${invitation.email}`);
     return updated;

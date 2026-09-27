@@ -8,16 +8,16 @@ import { Logo } from '@/components/landing/logo';
 import { Container } from '@/components/landing/container';
 
 const PRODUCT_LINKS = [
-  { label: 'Dataset Hub', href: '#' },
-  { label: 'Evaluations', href: '#' },
-  { label: 'AI Judge', href: '#' },
-  { label: 'Analytics', href: '#' },
+  { label: 'Dataset Hub', href: '/datasets' },
+  { label: 'Evaluations', href: '/tasks' },
+  { label: 'AI Judge', href: '/tasks' },
+  { label: 'Analytics', href: '/analytics' },
 ];
 
 const COMPANY_LINKS = [
-  { label: 'About', href: '#' },
-  { label: 'Careers', href: '#' },
-  { label: 'Contact', href: '#' },
+  { label: 'About', href: '/about' },
+  { label: 'Careers', href: '/careers' },
+  { label: 'Contact', href: '/contact' },
 ];
 
 export function Footer() {

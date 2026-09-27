@@ -41,12 +41,18 @@ export class ExportsService {
       requestedById: userId,
     };
 
-    await this.exportQueue.add('generate-export', jobData, {
-      attempts: 3,
-      backoff: { type: 'exponential', delay: 3000 },
-    });
+    try {
+      await this.exportQueue.add('generate-export', jobData, {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 3000 },
+      });
+      this.logger.log(`Export ${exportRecord.id} queued for generation`);
+    } catch (err) {
+      this.logger.error(`Failed to queue export ${exportRecord.id}: ${err}`);
+      // Non-blocking: export record is created, user can retry or it will
+      // be picked up when Redis recovers.
+    }
 
-    this.logger.log(`Export ${exportRecord.id} queued for generation`);
     return exportRecord;
   }
 

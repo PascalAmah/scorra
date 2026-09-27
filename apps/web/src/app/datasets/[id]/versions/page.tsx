@@ -13,7 +13,7 @@ import {
   useDatasetVersionDiff,
   useDatasetVersions,
 } from '@/hooks/use-datasets';
-import { api } from '@/lib/api';
+import { useAuthGuard } from '@/hooks/use-auth-guard';
 import type { Dataset } from '@scorra/types';
 import { cn, formatDate, formatNumber } from '@/lib/utils';
 
@@ -36,12 +36,7 @@ export default function DatasetVersionsPage() {
   const { data: versionsData } = useDatasetVersions(id);
   const versions = versionsData ?? [];
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (!api.isAuthenticated) {
-      router.replace('/login');
-    }
-  }, [router]);
+  useAuthGuard();
 
   const currentVersion = dataset?.version ?? versions[0]?.version ?? null;
   const effectiveBase = baseVersion ?? versions[versions.length - 1]?.version ?? null;
@@ -145,7 +140,7 @@ export default function DatasetVersionsPage() {
         </div>
 
         <div className="min-w-0">
-          <div className="mb-4 rounded-2xl border border-ink-200 bg-white p-5">
+          <div className="overflow-x-auto rounded-2xl border border-ink-200 bg-white p-5">
             <div className="mb-4 flex flex-wrap items-center gap-3">
               <select
                 value={effectiveBase ?? ''}

@@ -23,6 +23,7 @@ import { useAuthStore } from '@/store/auth-store';
 import { useOrganizations } from '@/hooks/use-organization';
 import { signOut } from '@/services/auth-service';
 import { api } from '@/lib/api';
+import { establishSessionMarker } from '@/lib/session-cookie';
 import { cn } from '@/lib/utils';
 import { effectiveRole, isOrgAdmin } from '@/lib/permissions';
 
@@ -98,7 +99,7 @@ export function Sidebar({ className, onNavigate, onClose, ...props }: SidebarPro
 
   const { data: orgsData } = useOrganizations();
   const orgs = orgsData ?? [];
-  const currentOrg = orgs.find((o) => o.id === user?.organizationId) ?? orgs[0];
+  const currentOrg = user ? orgs.find((o) => o.id === user.organizationId) ?? orgs[0] : null;
 
   const isAdmin = isOrgAdmin(user);
   const navGroups = isAdmin ? ADMIN_NAV : EVALUATOR_NAV;
@@ -107,6 +108,8 @@ export function Sidebar({ className, onNavigate, onClose, ...props }: SidebarPro
     try {
       const session = await api.switchOrg(orgId);
       setSession(session);
+      // Re-arm the marker before the reload navigates to a protected page.
+      await establishSessionMarker();
       window.location.reload();
     } catch {
       // silent fail
@@ -150,7 +153,11 @@ export function Sidebar({ className, onNavigate, onClose, ...props }: SidebarPro
             </span>
             <span className="min-w-0">
               <span className="block truncate text-[12.5px] font-semibold leading-tight">
-                {currentOrg?.name ?? 'No org'}
+                {currentOrg
+                  ? currentOrg.name
+                  : user
+                    ? (orgsData ? 'No org' : '…')
+                    : 'Not signed in'}
               </span>
               <span className="block font-mono text-[10.5px] text-ink-400">
                 {user ? (ROLE_LABELS[effectiveRole(user) ?? ''] ?? 'Member') : 'Not signed in'}

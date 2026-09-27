@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 import { SettingsShell } from '@/components/dashboard/settings-shell';
@@ -9,9 +9,14 @@ import { Input } from '@/components/ui/input';
 import type { Organization } from '@scorra/types';
 import { useOrganizations, useUpdateOrganization, useMembers } from '@/hooks/use-organization';
 import { useAuthStore } from '@/store/auth-store';
-import { api } from '@/lib/api';
+import { useAuthGuard } from '@/hooks/use-auth-guard';
 import { formatNumber } from '@/lib/utils';
 import { isOrgAdmin } from '@/lib/permissions';
+
+function windowLocationOrigin(): string {
+  if (typeof window === 'undefined') return '';
+  return window.location.origin;
+}
 
 const TIMEZONES = [
   'UTC-08:00 · Pacific Time',
@@ -56,12 +61,7 @@ export default function SettingsOrgPage() {
 
   const [saved, setSaved] = useState(false);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (!api.isAuthenticated) {
-      router.replace('/login');
-    }
-  }, [router]);
+  useAuthGuard();
 
   const sub = org ? org.name.toUpperCase() : '…';
 
@@ -217,7 +217,7 @@ function OrgProfileCard({
           </span>
           <div className="flex h-11 items-center overflow-hidden rounded-sm border border-ink-300">
             <span className="flex items-center self-stretch border-r border-ink-300 bg-paper px-3 font-mono text-[13px] text-ink-500">
-              scorra.app/org/
+              {windowLocationOrigin()}/org/
             </span>
             <input
               value={slug}

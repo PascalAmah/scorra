@@ -22,8 +22,8 @@ import {
   useTaskResults,
 } from '@/hooks/use-tasks';
 import { useUsers } from '@/hooks/use-users';
+import { useAuthGuard } from '@/hooks/use-auth-guard';
 import { useAuthStore } from '@/store/auth-store';
-import { api } from '@/lib/api';
 import { formatDate, formatNumber, formatRelativeTime } from '@/lib/utils';
 import { isOrgAdmin } from '@/lib/permissions';
 import { formatSeconds, initialsOf, verdictLabel } from '@/lib/task-utils';
@@ -54,12 +54,7 @@ export default function TaskDetailPage() {
     [usersData],
   );
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (!api.isAuthenticated) {
-      router.replace('/login');
-    }
-  }, [router]);
+  useAuthGuard();
 
   const isPairwise = task?.type === 'PAIRWISE';
   const isRanking = task?.type === 'RANKING';
