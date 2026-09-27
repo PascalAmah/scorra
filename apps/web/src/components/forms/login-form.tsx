@@ -4,7 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { motion } from 'motion/react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import { useForm } from 'react-hook-form';
 
 import { AuthFooter } from '@/components/auth/auth-footer';
@@ -27,6 +27,14 @@ function resolvePostLoginDestination(next?: string | null): string {
 }
 
 export function LoginForm() {
+  return (
+    <Suspense fallback={null}>
+      <LoginFormContent />
+    </Suspense>
+  );
+}
+
+function LoginFormContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [serverError, setServerError] = useState<string | null>(null);
