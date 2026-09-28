@@ -17,6 +17,7 @@ import { ExportsModule } from './modules/exports/exports.module';
 import { AiModule } from './modules/ai/ai.module';
 import { QueueModule } from './modules/queue/queue.module';
 import { HealthModule } from './modules/health/health.module';
+import { parseRedisUrl } from './common/utils/redis.util';
 import appConfig from './config/app.config';
 import databaseConfig from './config/database.config';
 import redisConfig from './config/redis.config';
@@ -59,7 +60,31 @@ import aiConfig from './config/ai.config';
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
-        redis: config.get<string>('REDIS_URL', 'redis://localhost:6379'),
+        redis: parseRedisUrl(config.get<string>('REDIS_URL', 'redis://localhost:6379')),
+
+        // Bull talks to Redis even when every queue is idle. Per queue it runs
+        // one blocking BRPOPLPUSH (`drainDelay`), one delay-set poll
+        // (`guardInterval`) and one stalled-job sweep (`stalledInterval`). At
+        // Bull's defaults (5s / 5s / 30s) the six queues this app registers
+        // generate ~225k commands/day — instantly blowing through command-billed
+        // Redis plans (e.g. Upstash's free tier of 10k/day). Once that quota is
+        // exceeded, the connection reports "ready" but every command fails with
+        // "ERR max daily request limit exceeded", causing uploads to fail with
+        // "the job queue is unavailable".
+        //
+        // Stretching these intervals only throttles *idle* polling — real-time
+        // job latency is unchanged because new jobs wake the blocked BRPOPLPUSH
+        // immediately, and delayed jobs publish on a channel that triggers an
+        // immediate check.
+        //
+        // Idle budget: 6 queues × (1/120s + 1/300s + 1/300s) ≈ 7.8k cmds/day,
+        // which fits inside the 10k/day free-tier limit.
+        settings: {
+          drainDelay: 120, // seconds a worker blocks on the wait list (default 5)
+          guardInterval: 300_000, // ms between idle delay-set polls (default 5_000)
+          stalledInterval: 300_000, // ms between stalled-job sweeps (default 30_000)
+        },
+
         defaultJobOptions: {
           attempts: 3,
           backoff: {
