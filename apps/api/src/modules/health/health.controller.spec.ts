@@ -7,11 +7,11 @@ import { PrismaService } from '../../prisma/prisma.service';
 describe('HealthController', () => {
   let controller: HealthController;
   let prisma: { $queryRaw: jest.Mock };
-  let queue: { client: { status: string } };
+  let queue: { client: { status: string; ping?: jest.Mock } };
 
   beforeEach(async () => {
     prisma = { $queryRaw: jest.fn().mockResolvedValue([{ '?column?': 1 }]) };
-    queue = { client: { status: 'ready' } };
+    queue = { client: { status: 'ready', ping: jest.fn().mockResolvedValue('PONG') } };
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [HealthController],
@@ -32,6 +32,17 @@ describe('HealthController', () => {
     });
   });
 
+  it('reports degraded when the connection is "ready" but commands fail (e.g. quota exceeded)', async () => {
+    queue.client.ping = jest
+      .fn()
+      .mockRejectedValue(new Error('ERR max daily request limit exceeded'));
+
+    await expect(controller.check()).resolves.toMatchObject({
+      status: 'ok',
+      redis: 'degraded: ERR max daily request limit exceeded',
+    });
+  });
+
   it('still returns ok when the queue connection is down', async () => {
     queue.client.status = 'reconnecting';
 
@@ -46,3 +57,4 @@ describe('HealthController', () => {
     await expect(controller.check()).resolves.toMatchObject({ redis: 'unknown' });
   });
 });
+
