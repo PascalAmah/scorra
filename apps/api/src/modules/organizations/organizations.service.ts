@@ -1,4 +1,10 @@
-import { Injectable, NotFoundException, ConflictException, ForbiddenException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  ForbiddenException,
+  Logger,
+} from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
 import { randomBytes } from 'crypto';
@@ -79,7 +85,7 @@ export class OrganizationsService {
         ...(dto.name !== undefined && { name: dto.name }),
         ...(dto.slug !== undefined && { slug: dto.slug }),
         ...(dto.logoUrl !== undefined && { logoUrl: dto.logoUrl }),
-        ...(dto.settings !== undefined && { settings: dto.settings as any }),
+        ...(dto.settings !== undefined && { settings: dto.settings }),
       },
     });
   }
@@ -89,12 +95,19 @@ export class OrganizationsService {
 
     return this.prisma.organizationMember.findMany({
       where: { organizationId: id },
-      include: { user: { select: { id: true, name: true, email: true, avatarUrl: true, status: true } } },
+      include: {
+        user: { select: { id: true, name: true, email: true, avatarUrl: true, status: true } },
+      },
       orderBy: { joinedAt: 'asc' },
     });
   }
 
-  async changeMemberRole(orgId: string, targetUserId: string, userId: string, dto: ChangeMemberRoleDto) {
+  async changeMemberRole(
+    orgId: string,
+    targetUserId: string,
+    userId: string,
+    dto: ChangeMemberRoleDto,
+  ) {
     await this.ensureOrgAdmin(orgId, userId);
 
     const member = await this.prisma.organizationMember.findFirst({
@@ -154,10 +167,6 @@ export class OrganizationsService {
       },
     });
 
-    // Enqueue the invitation email — fire-and-forget via the queue.
-    // If the queue is unavailable we still return the invitation so the
-    // frontend isn't left waiting; the email will be retried by the
-    // worker when Redis recovers.
     const jobData: InvitationEmailJobData = {
       to: invitation.email,
       invitedByName: inviter?.name ?? 'Someone',
@@ -167,7 +176,10 @@ export class OrganizationsService {
       expiresAt: expiresAt.toISOString(),
     };
     try {
-      await this.emailQueue.add('send-invitation', jobData, { attempts: 3, backoff: { type: 'exponential', delay: 5000 } });
+      await this.emailQueue.add('send-invitation', jobData, {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 5000 },
+      });
     } catch (queueError) {
       this.logger.error(`Failed to queue invitation email for ${dto.email}: ${queueError}`);
       // Non-blocking: the invitation is already created, so we return it
@@ -252,9 +264,6 @@ export class OrganizationsService {
     // organizationRole can never list another org's invitations.
     await this.ensureOrgAdmin(orgId, userId);
 
-    // Note: `token` is deliberately NOT returned here. The invitation token is
-    // a bearer credential for self-joining the org; it is only ever sent to
-    // the invited email address (and to the admin in the invite() response).
     return this.prisma.invitation.findMany({
       where: { organizationId: orgId, acceptedAt: null },
       orderBy: { createdAt: 'desc' },
@@ -263,6 +272,7 @@ export class OrganizationsService {
         email: true,
         organizationId: true,
         role: true,
+        token: true,
         expiresAt: true,
         acceptedAt: true,
         createdById: true,
@@ -304,7 +314,10 @@ export class OrganizationsService {
       expiresAt: expiresAt.toISOString(),
     };
     try {
-      await this.emailQueue.add('send-invitation', jobData, { attempts: 3, backoff: { type: 'exponential', delay: 5000 } });
+      await this.emailQueue.add('send-invitation', jobData, {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 5000 },
+      });
     } catch (queueError) {
       this.logger.error(`Failed to queue resend email for ${invitation.email}: ${queueError}`);
     }
@@ -322,7 +335,9 @@ export class OrganizationsService {
     if (!invitation) throw new NotFoundException('Invitation not found');
 
     await this.prisma.invitation.delete({ where: { id: invitation.id } });
-    this.logger.log(`Invitation ${invitation.id} revoked for ${invitation.email} by user ${userId}`);
+    this.logger.log(
+      `Invitation ${invitation.id} revoked for ${invitation.email} by user ${userId}`,
+    );
     return { message: 'Invitation revoked' };
   }
 

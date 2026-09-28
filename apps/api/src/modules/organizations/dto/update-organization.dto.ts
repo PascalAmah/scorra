@@ -1,5 +1,6 @@
 import { IsString, IsOptional, IsObject, Matches, MinLength, MaxLength } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import type { JsonObject } from '@prisma/client/runtime/library';
 
 export class UpdateOrganizationDto {
   @ApiPropertyOptional({ example: 'Acme Corp Updated' })
@@ -24,5 +25,5 @@ export class UpdateOrganizationDto {
   @ApiPropertyOptional({ example: { maxEvaluators: 20 } })
   @IsOptional()
   @IsObject()
-  settings?: Record<string, unknown>;
+  settings?: JsonObject;
 }
