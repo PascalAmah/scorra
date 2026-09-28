@@ -22,7 +22,13 @@ export class HealthController {
     // otherwise sit at PROCESSING with no explanation. A degraded queue must
     // not fail the health check, or the platform would restart the service
     // instead of letting the API answer requests it can still serve.
-    const redis = this.redisStatus();
+    //
+    // A connection status of "ready" only means the TCP connection is up;
+    // managed Redis providers (like Upstash) reject commands with an ERR
+    // reply once the plan's daily/monthly quota is reached while keeping
+    // the socket alive. Testing with a real PING verifies that the Redis
+    // instance is actually accepting commands.
+    const redis = await this.redisStatus();
 
     return {
       status: 'ok',
@@ -32,13 +38,45 @@ export class HealthController {
     };
   }
 
-  /** Bull keeps a single lazily-connected ioredis client for the queue. */
-  private redisStatus(): string {
+  /**
+   * Bull keeps a lazily-connected ioredis client on the queue. We first
+   * check connection status, then verify with PING that Redis is actually
+   * accepting commands (not quota-blocked or write-limited).
+   */
+  private async redisStatus(): Promise<string> {
     try {
-      const client = this.datasetQueue?.client as { status?: string } | undefined;
-      return client?.status ?? 'unknown';
+      const client = this.datasetQueue?.client as
+        | { status?: string; ping?: () => Promise<string> }
+        | undefined;
+
+      const connStatus = client?.status;
+      if (!connStatus) {
+        return 'unknown';
+      }
+      if (connStatus !== 'ready') {
+        return connStatus;
+      }
+
+      if (typeof client.ping === 'function') {
+        try {
+          // Bound to 1.5s so a hung Redis doesn't stall the health check
+          await Promise.race([
+            client.ping(),
+            new Promise((_, reject) =>
+              setTimeout(() => reject(new Error('PING timed out')), 1500),
+            ),
+          ]);
+          return 'ready';
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          return `degraded: ${msg}`;
+        }
+      }
+
+      return connStatus;
     } catch {
       return 'unknown';
     }
   }
 }
+

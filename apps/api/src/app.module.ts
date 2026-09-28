@@ -17,6 +17,7 @@ import { ExportsModule } from './modules/exports/exports.module';
 import { AiModule } from './modules/ai/ai.module';
 import { QueueModule } from './modules/queue/queue.module';
 import { HealthModule } from './modules/health/health.module';
+import { parseRedisUrl } from './common/utils/redis.util';
 import appConfig from './config/app.config';
 import databaseConfig from './config/database.config';
 import redisConfig from './config/redis.config';
@@ -59,7 +60,13 @@ import aiConfig from './config/ai.config';
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
-        redis: config.get<string>('REDIS_URL', 'redis://localhost:6379'),
+        redis: parseRedisUrl(config.get<string>('REDIS_URL', 'redis://localhost:6379')),
+        settings: {
+          drainDelay: 120, // seconds a worker blocks on the wait list (default 5)
+          guardInterval: 300_000, // ms between idle delay-set polls (default 5_000)
+          stalledInterval: 300_000, // ms between stalled-job sweeps (default 30_000)
+        },
+
         defaultJobOptions: {
           attempts: 3,
           backoff: {
